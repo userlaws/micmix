@@ -1,7 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import type { DeviceReport, MicMixBridge, AudioState, AudioCommand, Meters } from './shared';
+import type { DeviceReport, MicMixBridge, AudioState, AudioCommand, Meters, YouTubeCommand, YouTubeUpdate } from './shared';
 if (process.argv.includes('--audio-worker')) {
   contextBridge.exposeInMainWorld('audioHost', {
+    youtube: (command: YouTubeCommand) => ipcRenderer.invoke('youtube:control', command),
+    onYouTube: (callback: (update: YouTubeUpdate) => void) => { ipcRenderer.on('audio:youtube', (_event, update) => callback(update)); },
     meters: (meters: Meters) => ipcRenderer.send('audio:meters', meters),
     state: (state: AudioState) => ipcRenderer.send('audio:state', state),
     onCommand: (callback: (id: number, command: AudioCommand) => void) => {
@@ -13,6 +15,8 @@ if (process.argv.includes('--audio-worker')) {
   });
 } else {
   const api: MicMixBridge = {
+    youtubeTrack: url => ipcRenderer.invoke('youtube:track', url),
+    videoBounds: bounds => ipcRenderer.send('youtube:bounds', bounds),
     pickFiles: () => ipcRenderer.invoke('files:pick'),
     dropFiles: files => ipcRenderer.invoke('files:drop', files.map(file => webUtils.getPathForFile(file))),
     onMeters: callback => {

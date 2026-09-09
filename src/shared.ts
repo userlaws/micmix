@@ -4,6 +4,8 @@ export interface DeviceReport {
   setSinkIdSupported: boolean; secureContext: boolean;
 }
 export interface MicMixBridge {
+  youtubeTrack(url: string): Promise<LocalTrack>;
+  videoBounds(bounds: VideoBounds | null): void;
   pickFiles(): Promise<LocalTrack[]>;
   dropFiles(files: File[]): Promise<LocalTrack[]>;
   onMeters(callback: (meters: Meters) => void): () => void;
@@ -26,6 +28,8 @@ declare global {
       publish(report: DeviceReport): void; onScan(callback: () => void): void;
       state(state: AudioState): void;
       meters(meters: Meters): void;
+      youtube(command: YouTubeCommand): Promise<void>;
+      onYouTube(callback: (update: YouTubeUpdate) => void): void;
       onCommand(callback: (id: number, command: AudioCommand) => void): void;
       reply(id: number, error: string | null): void;
     };
@@ -42,7 +46,10 @@ export interface AudioState {
   monitorId: string | null; queue: LocalTrack[]; index: number; playing: boolean;
   position: number; duration: number; settings: MixerSettings;
 }
-export interface LocalTrack { id: string; title: string; url: string }
+export interface LocalTrack { id: string; title: string; url: string; youtubeId?: string }
+export interface VideoBounds { x: number; y: number; width: number; height: number }
+export type YouTubeCommand = { type: 'load'; videoId: string; position: number } | { type: 'play' } | { type: 'pause' } | { type: 'seek'; seconds: number };
+export interface YouTubeUpdate { videoId: string; ready?: boolean; playerState?: number; position?: number; duration?: number; title?: string; error?: string }
 export type Channel = 'mic' | 'music' | 'soundboard' | 'master';
 export interface MixerSettings {
   levels: Record<Channel, number>; muted: Record<Channel, boolean>;

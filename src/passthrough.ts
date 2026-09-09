@@ -1,4 +1,4 @@
-import { initialAudioState, emptyMeters, type AudioCommand, type AudioDevice, type AudioState } from './shared';
+import { initialAudioState, emptyMeters, type AudioCommand, type AudioDevice, type AudioState, type LocalTrack, type YouTubeUpdate } from './shared';
 import { cableSink, microphoneChoices, playbackChoices } from './devices';
 import { createMixerGraph } from './mixer-graph';
 
@@ -16,6 +16,10 @@ let element: HTMLAudioElement | null = null;
 let musicSource: MediaElementAudioSourceNode | null = null;
 let mediaVersion = 0;
 let playIntent = 0;
+let youtubeStream: MediaStream | null = null;
+let youtubeSource: MediaStreamAudioSourceNode | null = null;
+let activeYoutubeId: string | null = null;
+let youtubeReady: Promise<void> = Promise.resolve();
 let state = initialAudioState();
 function publish(patch: Partial<AudioState>) {
   state = { ...state, ...patch };
@@ -24,6 +28,10 @@ function publish(patch: Partial<AudioState>) {
 function disposeMusic() {
   ++playIntent;
   ++mediaVersion;
+  if (activeYoutubeId) void window.audioHost.youtube({ type: 'pause' }).catch(() => {});
+  activeYoutubeId = null;
+  youtubeSource?.disconnect(); youtubeSource = null;
+  youtubeStream?.getTracks().forEach(track => track.stop()); youtubeStream = null;
   if (element) {
     element.onended = element.onerror = element.onloadedmetadata = element.onpause = element.onplaying = null;
     element.pause(); element.removeAttribute('src'); element.load();
@@ -151,6 +159,13 @@ function loadTrack(index: number, autoPlay: boolean, position = 0) {
   const track = state.queue[index];
   disposeMusic();
   publish({ index, position, duration: 0, playing: false, error: null });
+  if (track.youtubeId) {
+    activeYoutubeId = track.youtubeId;
+    const version = mediaVersion;
+    youtubeReady = prepareYouTube(track, position, autoPlay, version);
+    void youtubeReady.catch(error => { if (version === mediaVersion) publish({ playing: false, error: error instanceof Error ? error.message : String(error) }); });
+    return;
+  }
   if (!context || !graph) return;
   const audio = new Audio();
   element = audio; audio.preload = 'metadata';
@@ -181,6 +196,14 @@ function loadTrack(index: number, autoPlay: boolean, position = 0) {
 async function play() {
   if (state.status !== 'live' || !context) throw new Error('Go LIVE before playing music.');
   if (state.index < 0 || !state.queue.length) throw new Error('Add a local audio file first.');
+  if (state.queue[state.index].youtubeId) {
+    const version = mediaVersion, intent = ++playIntent;
+    await youtubeReady;
+    if (version !== mediaVersion || intent !== playIntent || state.status !== 'live') throw new Error('Playback cancelled.');
+    if (!youtubeStream) throw new Error('YouTube audio capture is unavailable. Select the video again to retry.');
+    await window.audioHost.youtube({ type: 'play' });
+    return;
+  }
   if (!element) loadTrack(state.index, false, state.position);
   const audio = element!;
   const version = mediaVersion;
@@ -190,6 +213,50 @@ async function play() {
     audio.pause(); throw new Error('Playback cancelled.');
   }
   publish({ playing: true });
+}
+async function prepareYouTube(track: LocalTrack, position: number, autoPlay: boolean, version: number) {
+  await window.audioHost.youtube({ type: 'load', videoId: track.youtubeId!, position });
+  if (version !== mediaVersion) return;
+  if (!context || !graph || state.status !== 'live') return;
+  const ctx = context;
+  // getDisplayMedia requires a video request. Discard its video track immediately;
+  // the only audio source granted by main is the YouTube BrowserView's webContents.
+  const captured = await navigator.mediaDevices.getDisplayMedia({
+    video: { frameRate: 1 }, audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  });
+  if (version !== mediaVersion || ctx !== context || !graph) { captured.getTracks().forEach(t => t.stop()); return; }
+  captured.getVideoTracks().forEach(t => t.stop());
+  if (!captured.getAudioTracks().length) { captured.getTracks().forEach(t => t.stop()); throw new Error('Electron did not provide YouTube audio. Select the video again to retry.'); }
+  youtubeStream = new MediaStream(captured.getAudioTracks());
+  youtubeSource = ctx.createMediaStreamSource(youtubeStream);
+  youtubeSource.connect(graph.music);
+  youtubeStream.getAudioTracks().forEach(t => t.addEventListener('ended', () => {
+    if (version === mediaVersion) {
+      youtubeSource?.disconnect(); youtubeSource = null; youtubeStream = null;
+      void window.audioHost.youtube({ type: 'pause' }).catch(() => {});
+      publish({ playing: false, error: 'YouTube audio capture ended. Select the video again to retry.' });
+    }
+  }));
+  if (autoPlay) await window.audioHost.youtube({ type: 'play' });
+}
+export function youtubeUpdate(update: YouTubeUpdate) {
+  if (!activeYoutubeId || update.videoId !== activeYoutubeId) return;
+  const patch: Partial<AudioState> = {};
+  if (update.title) patch.queue = state.queue.map(track => track.youtubeId === update.videoId ? { ...track, title: update.title! } : track);
+  if (Number.isFinite(update.position)) patch.position = Math.max(0, update.position!);
+  if (Number.isFinite(update.duration)) patch.duration = Math.max(0, update.duration!);
+  if (update.error) { patch.error = update.error; patch.playing = false; }
+  if (update.playerState === 1) {
+    if (state.status !== 'live' || !youtubeStream) { void window.audioHost.youtube({ type: 'pause' }).catch(() => {}); }
+    else { patch.playing = true; patch.error = null; }
+  } else if (update.playerState === 2 || update.playerState === 5) patch.playing = false;
+  if (update.playerState === 0) {
+    const advance = state.playing && state.status === 'live';
+    publish({ ...patch, playing: false });
+    if (advance && state.index + 1 < state.queue.length) loadTrack(state.index + 1, true);
+    return;
+  }
+  if (Object.keys(patch).length) publish(patch);
 }
 function tone() {
   if (!context || !graph || state.status !== 'live') throw new Error('Go LIVE before testing the virtual output.');
@@ -224,13 +291,15 @@ export async function command(value: AudioCommand) {
     case 'play': await play(); break;
     case 'pause':
       ++playIntent;
+      if (activeYoutubeId) await window.audioHost.youtube({ type: 'pause' });
       element?.pause(); publish({ playing: false }); break;
     case 'next':
       if (state.index + 1 < state.queue.length) loadTrack(state.index + 1, state.playing);
-      else { element?.pause(); publish({ playing: false }); }
+      else { element?.pause(); if (activeYoutubeId) await window.audioHost.youtube({ type: 'pause' }); publish({ playing: false }); }
       break;
     case 'select': loadTrack(value.index, state.playing); break;
     case 'seek':
+      if (activeYoutubeId) { await window.audioHost.youtube({ type: 'seek', seconds: value.seconds }); publish({ position: value.seconds }); break; }
       if (!element || !Number.isFinite(element.duration)) throw new Error('Wait for the file to load before seeking.');
       element.currentTime = Math.min(value.seconds, element.duration);
       publish({ position: element.currentTime }); break;

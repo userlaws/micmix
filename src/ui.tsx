@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useLayoutEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { initialAudioState, emptyMeters, type DeviceReport, type AudioCommand, type MixerSettings, type Channel } from './shared';
 import { microphoneChoices, playbackChoices } from './devices';
@@ -39,6 +39,8 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const videoSlot = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let receivedState = false, receivedReport = false;
     const offState = window.micmix.onAudioState(value => { receivedState = true; setAudio(value); });
@@ -74,12 +76,39 @@ function App() {
     } catch (e) { setError(String(e)); }
     finally { setBusy(false); }
   }
+  async function addYouTube() {
+    setError(''); setBusy(true);
+    try {
+      const track = await window.micmix.youtubeTrack(youtubeUrl);
+      const before = await window.micmix.getAudioState();
+      await window.micmix.command({ type: 'enqueue', tracks: [track] });
+      if (before.queue.length) await window.micmix.command({ type: 'select', index: before.queue.length });
+      setYoutubeUrl('');
+    } catch (e) { setError(String(e)); }
+    finally { setBusy(false); }
+  }
   const cable = report?.devices.some(d => d.kind === 'audiooutput' && /CABLE Input/i.test(d.label)) &&
     report?.devices.some(d => d.kind === 'audioinput' && /CABLE Output/i.test(d.label));
   const live = audio.status === 'live';
   const current = audio.queue[audio.index];
+  useLayoutEffect(() => {
+    let frame = 0;
+    const update = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const rect = videoSlot.current?.getBoundingClientRect();
+        window.micmix.videoBounds(rect && rect.top >= 0 && rect.left >= 0 && rect.bottom <= window.innerHeight && rect.right <= window.innerWidth ?
+          { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null);
+      });
+    };
+    const observer = new ResizeObserver(update);
+    if (videoSlot.current) observer.observe(videoSlot.current);
+    window.addEventListener('resize', update); window.addEventListener('scroll', update, true);
+    update();
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener('resize', update); window.removeEventListener('scroll', update, true); window.micmix.videoBounds(null); };
+  }, [current?.youtubeId, current?.title, settingsOpen, error, audio.error]);
   return <main onDragOver={e => { e.preventDefault(); }} onDrop={e => { e.preventDefault(); }}>
-    <header><div><span className="eyebrow">YOUR SOUND. ONE MICROPHONE.</span><h1>MicMix <span className="phase">PHASE 2</span></h1></div>
+    <header><div><span className="eyebrow">YOUR SOUND. ONE MICROPHONE.</span><h1>MicMix <span className="phase">PHASE 3</span></h1></div>
       <div className="header-actions"><button className={'air ' + (live ? 'live' : '')}
         disabled={audio.status === 'off' && (busy || !micId || !cable || !report?.setSinkIdSupported || (audio.settings.monitor && !monitorId))}
         onClick={() => void send(audio.status === 'off' ? { type: 'start', deviceId: micId, monitorId } : { type: 'stop' })}>
@@ -113,10 +142,15 @@ function App() {
         onDragEnter={e => { e.preventDefault(); setDragging(true); }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false); }}
         onDrop={e => { e.preventDefault(); setDragging(false); void addFiles(Array.from(e.dataTransfer.files)); }}>
         <div className="panel-heading"><h2>Music</h2><button disabled={busy} onClick={() => void addFiles()}>＋ Add files</button></div>
-        <div className="now-playing"><span className="eyebrow">{audio.playing ? 'NOW PLAYING' : current ? 'READY TO PLAY' : 'LOCAL LIBRARY'}</span>
+        <form className="youtube-form" onSubmit={e => { e.preventDefault(); void addYouTube(); }}>
+          <input aria-label="YouTube URL" type="url" required placeholder="Paste a YouTube link…" value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} />
+          <button disabled={busy || !youtubeUrl.trim()} type="submit">Load link</button>
+        </form>
+        {current?.youtubeId ? <><div className="youtube-slot" ref={videoSlot}><span>Loading YouTube player…</span></div><h3 className="youtube-title">{current.title}</h3></> :
+        <div className="now-playing"><span className="eyebrow">{audio.playing ? 'NOW PLAYING' : current ? 'READY TO PLAY' : 'MUSIC SOURCES'}</span>
           <div className="record-icon" aria-hidden="true">♫</div><h3>{current?.title ?? 'Bring your music'}</h3>
-          <p>{current ? 'Local file · ' + (audio.index + 1) + ' of ' + audio.queue.length : 'Drop MP3, WAV, FLAC, or OGG files here'}</p>
-          {!live && <small>Go LIVE to play. OFF AIR pauses and silences all audio.</small>}</div>
+          <p>{current ? 'Local file · ' + (audio.index + 1) + ' of ' + audio.queue.length : 'Paste a YouTube link above, or drop MP3, WAV, FLAC, or OGG files here'}</p>
+          {!live && <small>Go LIVE to play. OFF AIR pauses and silences all audio.</small>}</div>}
         <div className="seek"><input aria-label="Seek music" type="range" min="0" max={audio.duration || 1} step="0.1" value={Math.min(audio.position, audio.duration || 1)}
           disabled={!live || !audio.duration || busy} onChange={e => void send({ type: 'seek', seconds: Number(e.target.value) }, false)} />
           <div><span>{time(audio.position)}</span><span>{time(audio.duration)}</span></div></div>
@@ -131,7 +165,7 @@ function App() {
       <section className="panel soundboard"><div className="panel-heading"><h2>Soundboard</h2><span className="muted">PHASE 4</span></div><div className="pads">{Array.from({ length: 9 }, (_, i) => <button disabled key={i}>{String(i + 1).padStart(2, '0')}</button>)}</div><p>Local clips and global hotkeys arrive in Phase 4.</p></section>
     </div>
     <footer><span className={cable ? 'accent' : 'error-text'}>{cable ? '● Virtual Mic OK' : '● Virtual Mic missing'}</span><span>Discord: manual setup</span><span>FiveM: detection in Phase 4</span><span>{audio.settings.monitor ? 'Monitor: ' + (audio.settings.monitorMic ? 'music + mic' : 'music only') : 'Monitor off'}</span></footer>
-    <p className="checkpoint">Phase 2 checkpoint: Discord input → <strong>CABLE Output</strong>; Discord output → real headphones. Test music + voice + ducking. Turn MicMix monitoring off while using Discord’s mic test to avoid hearing the music twice.</p>
+    <p className="checkpoint">Phase 3 checkpoint: paste a YouTube link, go LIVE, and press Play. Have a friend confirm video audio + your mic in Discord using <strong>CABLE Output</strong>. Turn MicMix monitoring off while using Discord’s mic test to avoid hearing music twice.</p>
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<App />);

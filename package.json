@@ -8,7 +8,10 @@
     "build": "tsc --noEmit && node scripts/build.mjs",
     "start": "npm run build && node scripts/start.mjs",
     "check:devices": "npm run build && node scripts/start.mjs --diagnose",
-    "check:phase2": "npm run build && node scripts/check-phase2.mjs"
+    "check:phase2": "npm run build && node scripts/check-phase2.mjs",
+    "check:phase3": "npm run build && node scripts/start.mjs --smoke-phase3",
+    "check:capture": "npm run build && node scripts/run-capture-probe.mjs",
+    "check:youtube": "npm run build && node scripts/run-capture-probe.mjs --youtube"
   },
   "dependencies": {
     "react": "19.2.8",

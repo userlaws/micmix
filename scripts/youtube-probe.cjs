@@ -1,0 +1,22 @@
+const { app, BrowserWindow, BrowserView } = require('electron');
+const path = require('node:path');
+const { writeFile } = require('node:fs/promises');
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+app.setPath('userData', path.join(app.getPath('temp'), 'micmix-youtube-probe-' + process.pid));
+app.whenReady().then(async () => {
+  const host = new BrowserWindow({ show: false });
+  const view = new BrowserView({ webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
+  host.setBrowserView(view); view.setBounds({x:0,y:0,width:640,height:360});
+  view.webContents.setAudioMuted(true);
+  await view.webContents.loadURL('https://www.youtube.com/embed/M7lc1UVf-VE?enablejsapi=1&origin=https%3A%2F%2Fwww.youtube.com&autoplay=0', { httpReferrer: 'https://com.micmix.desktop/' });
+  await view.webContents.executeJavaScript(`window.probeMessages=[]; window.addEventListener('message', event => { if(event.origin === 'https://www.youtube.com') window.probeMessages.push(event.data); }); window.postMessage(JSON.stringify({event:'listening',id:'micmix'}), 'https://www.youtube.com');`);
+  await new Promise(r=>setTimeout(r,3000));
+  await view.webContents.executeJavaScript(`window.postMessage(JSON.stringify({event:'command',func:'playVideo',args:[],id:'micmix'}),'https://www.youtube.com');`);
+  await new Promise(r=>setTimeout(r,5000));
+  const result = await view.webContents.executeJavaScript(`({messages:window.probeMessages.slice(-12),text:document.body.innerText.slice(0,1800),video:!!document.querySelector('video')})`);
+  console.log(JSON.stringify(result,null,2));
+  await writeFile(path.join(__dirname, '../artifacts/youtube-probe.json'),JSON.stringify(result,null,2));
+  await writeFile(path.join(__dirname, '../artifacts/youtube-probe.png'),(await view.webContents.capturePage()).toPNG());
+  app.quit();
+}).catch(e=>{console.error(e);app.exit(1)});
+setTimeout(()=>{console.error('YouTube probe timed out');app.exit(1)},25000).unref();

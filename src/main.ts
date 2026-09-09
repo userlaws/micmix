@@ -5,16 +5,21 @@ import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { initialAudioState, emptyMeters, type DeviceReport, type AudioState, type AudioCommand, type LocalTrack, type Meters } from './shared';
 import { validCommand } from './commands';
+import { youtubeId } from './youtube-url';
+import { YouTubeView } from './youtube-view';
+import type { YouTubeCommand, VideoBounds } from './shared';
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.setName('MicMix');
+app.setAppUserModelId('com.micmix.desktop');
 const diagnose = process.argv.includes('--diagnose');
-const smokeTest = process.argv.includes('--smoke-phase1') || process.argv.includes('--smoke-phase2');
+const smokeTest = process.argv.includes('--smoke-phase1') || process.argv.includes('--smoke-phase2') || process.argv.includes('--smoke-phase3');
 // Diagnostics use their own cache so they can run beside the user's open app.
 if (diagnose || smokeTest) app.setPath('userData', path.join(app.getPath('temp'), 'micmix-diagnostics-' + process.pid));
 else if (!app.requestSingleInstanceLock()) app.quit();
 let ui: BrowserWindow | null = null;
 let worker: BrowserWindow | null = null;
+let youtube: YouTubeView | null = null;
 let latest: DeviceReport | null = null;
 let timeout: NodeJS.Timeout | undefined;
 let audioState: AudioState = initialAudioState();
@@ -58,13 +63,40 @@ function protect(win: BrowserWindow) {
 app.whenReady().then(async () => {
   const audioSession = session.fromPartition('micmix-audio');
   audioSession.setPermissionCheckHandler((contents, permission) =>
-    isWorker(contents) && (permission === 'media' || permission === 'speaker-selection'));
+    isWorker(contents) && (permission === 'media' || permission === 'speaker-selection' || permission === 'display-capture'));
   audioSession.setPermissionRequestHandler((contents, permission, callback, details) =>
-    callback(isWorker(contents) && (permission === 'speaker-selection' ||
+    callback(isWorker(contents) && (permission === 'speaker-selection' || permission === 'display-capture' ||
       (permission === 'media' && 'mediaTypes' in details &&
         details.mediaTypes?.every(type => type === 'audio') === true))));
+  audioSession.setDisplayMediaRequestHandler((request, callback) => {
+    const frame = youtube?.frame();
+    if (!worker || !isWorker(worker.webContents) || request.frame !== worker.webContents.mainFrame || !frame) { callback({}); return; }
+    // Capture only this BrowserView, never system loopback or another window.
+    callback({ video: frame, audio: frame, enableLocalEcho: false });
+  });
   session.defaultSession.setPermissionCheckHandler(() => false);
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  ipcMain.handle('youtube:track', (event, url: string) => {
+    if (event.sender !== ui?.webContents || event.senderFrame?.url !== uiUrl) throw new Error('Unauthorized');
+    if (typeof url !== 'string' || url.length > 2048) throw new Error('Paste a YouTube video link.');
+    const videoId = youtubeId(url);
+    const track: LocalTrack = { id: randomUUID(), title: 'YouTube · ' + videoId, url: 'https://www.youtube.com/watch?v=' + videoId, youtubeId: videoId };
+    localFiles.set(track.id, track); return track;
+  });
+  ipcMain.handle('youtube:control', (event, command: YouTubeCommand) => {
+    if (!isWorker(event.sender) || event.senderFrame?.url !== audioUrl) throw new Error('Unauthorized');
+    if (!youtube || !command || !['load', 'play', 'pause', 'seek'].includes(command.type)) throw new Error('YouTube player unavailable.');
+    return youtube.command(command);
+  });
+  ipcMain.on('youtube:event', (event, data) => { if (data && typeof data === 'object') youtube?.event(event, data); });
+  ipcMain.on('youtube:bounds', (event, bounds: VideoBounds | null) => {
+    if (event.sender !== ui?.webContents || event.senderFrame?.url !== uiUrl) return;
+    if (bounds === null) { youtube?.bounds(null); return; }
+    if (!bounds || !['x', 'y', 'width', 'height'].every(key => Number.isFinite(bounds[key as keyof VideoBounds]))) return;
+    const [width, height] = ui!.getContentSize();
+    if (bounds.x < 0 || bounds.y < 0 || bounds.width < 0 || bounds.height < 0 || bounds.x + bounds.width > width + 1 || bounds.y + bounds.height > height + 1) { youtube?.bounds(null); return; }
+    youtube?.bounds({ x: Math.round(bounds.x), y: Math.round(bounds.y), width: Math.round(bounds.width), height: Math.round(bounds.height) });
+  });
   ipcMain.handle('files:pick', async event => {
     if (event.sender !== ui?.webContents || event.senderFrame?.url !== uiUrl) throw new Error('Unauthorized');
     const result = await dialog.showOpenDialog(ui!, { properties: ['openFile', 'multiSelections'],
@@ -153,6 +185,7 @@ app.whenReady().then(async () => {
   });
   protect(worker);
   worker.webContents.on('render-process-gone', (_event, details) => {
+    youtube?.pause();
     cancelPending('Audio worker stopped. Restart MicMix.');
     publishAudio({ ...audioState, status: 'off', micId: null, monitorId: null, tone: false, playing: false, error: 'Audio worker stopped. Restart MicMix.' });
     if (ui && !ui.isDestroyed()) ui.webContents.send('audio:meters', emptyMeters);
@@ -162,10 +195,12 @@ app.whenReady().then(async () => {
   });
   if (!diagnose) {
     ui = new BrowserWindow({ width: 1260, height: 850, minWidth: 900, minHeight: 640,
-      title: 'MicMix — Phase 2', backgroundColor: '#101318', autoHideMenuBar: true,
+      title: 'MicMix — Phase 3', backgroundColor: '#101318', autoHideMenuBar: true,
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
     protect(ui);
+    youtube = new YouTubeView(ui, update => { if (worker && !worker.isDestroyed()) worker.webContents.send('audio:youtube', update); });
     ui.webContents.on('render-process-gone', () => {
+      youtube?.pause();
       if (worker && !worker.isDestroyed()) worker.webContents.send('audio:command', ++commandId, { type: 'stop' });
     });
     ui.on('closed', () => { ui = null; app.quit(); });
@@ -185,9 +220,9 @@ app.whenReady().then(async () => {
     const deadline = Date.now() + 20000;
     while (!latest && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
     if (!latest) throw new Error('Smoke check timed out waiting for devices.');
-    const smoke = require(path.join(app.getAppPath(), 'scripts', process.argv.includes('--smoke-phase2') ? 'smoke-phase2.cjs' : 'smoke-phase1.cjs'));
-    await smoke(ui, worker, app.getAppPath(), registerFiles);
+    const smoke = require(path.join(app.getAppPath(), 'scripts', process.argv.includes('--smoke-phase3') ? 'smoke-phase3.cjs' : process.argv.includes('--smoke-phase2') ? 'smoke-phase2.cjs' : 'smoke-phase1.cjs'));
+    await smoke(ui, worker, app.getAppPath(), registerFiles, youtube);
     app.quit();
   }
 }).catch(error => { console.error(error); app.exit(1); });
-app.on('before-quit', () => { clearTimeout(timeout); cancelPending('MicMix is closing.'); });
+app.on('before-quit', () => { clearTimeout(timeout); youtube?.close(); cancelPending('MicMix is closing.'); });

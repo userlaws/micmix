@@ -1,5 +1,5 @@
 import type { DeviceReport, AudioDevice } from './shared';
-import { command, checkDevices, onDeviceLoss } from './passthrough';
+import { command, checkDevices, onDeviceLoss, youtubeUpdate } from './passthrough';
 let scanning = false;
 let rescan = false;
 let labelsUnlocked = false;
@@ -39,6 +39,7 @@ async function scan() {
 }
 window.audioHost.onScan(() => { void scan(); });
 onDeviceLoss(scan);
+window.audioHost.onYouTube(youtubeUpdate);
 window.audioHost.onCommand((id, value) => {
   void command(value).then(() => window.audioHost.reply(id, null))
     .catch(error => window.audioHost.reply(id, error instanceof Error ? error.message : String(error)));
