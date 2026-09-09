@@ -1,6 +1,8 @@
 import type { DeviceReport, AudioDevice } from './shared';
+import { command, checkDevices, onDeviceLoss } from './passthrough';
 let scanning = false;
 let rescan = false;
+let labelsUnlocked = false;
 async function scan() {
   if (scanning) { rescan = true; return; }
   scanning = true;
@@ -10,10 +12,11 @@ async function scan() {
   };
   let stream: MediaStream | undefined;
   try {
-    // Open only to unlock labels. No AudioContext, playback, or recording in Phase 0.
-    stream = await navigator.mediaDevices.getUserMedia({
+    // Unlock once; rescans must not open a second mic while LIVE.
+    if (!labelsUnlocked) stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }, video: false
     });
+    labelsUnlocked = true;
   } catch (error) {
     report.error = 'Microphone access: ' + (error instanceof Error ? error.message : String(error)) +
       '. Check Windows Settings > Privacy & security > Microphone > Let desktop apps access your microphone.';
@@ -25,6 +28,7 @@ async function scan() {
       .filter(device => device.kind === 'audioinput' || device.kind === 'audiooutput')
       .map(device => ({ deviceId: device.deviceId, groupId: device.groupId,
         kind: device.kind as AudioDevice['kind'], label: device.label }));
+    checkDevices(report.devices);
   } catch (error) {
     report.error = [report.error, 'Device enumeration: ' + String(error)].filter(Boolean).join(' ');
   } finally {
@@ -34,5 +38,10 @@ async function scan() {
   }
 }
 window.audioHost.onScan(() => { void scan(); });
+onDeviceLoss(scan);
+window.audioHost.onCommand((id, value) => {
+  void command(value).then(() => window.audioHost.reply(id, null))
+    .catch(error => window.audioHost.reply(id, error instanceof Error ? error.message : String(error)));
+});
 navigator.mediaDevices.addEventListener('devicechange', () => { void scan(); });
 void scan();
