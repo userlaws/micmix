@@ -4,6 +4,9 @@ export interface DeviceReport {
   setSinkIdSupported: boolean; secureContext: boolean;
 }
 export interface MicMixBridge {
+  pickFiles(): Promise<LocalTrack[]>;
+  dropFiles(files: File[]): Promise<LocalTrack[]>;
+  onMeters(callback: (meters: Meters) => void): () => void;
   getAudioState(): Promise<AudioState>;
   command(command: AudioCommand): Promise<void>;
   onAudioState(callback: (state: AudioState) => void): () => void;
@@ -22,12 +25,40 @@ declare global {
     audioHost: {
       publish(report: DeviceReport): void; onScan(callback: () => void): void;
       state(state: AudioState): void;
+      meters(meters: Meters): void;
       onCommand(callback: (id: number, command: AudioCommand) => void): void;
       reply(id: number, error: string | null): void;
     };
   }
 }
-export type AudioCommand = { type: 'start'; deviceId: string } | { type: 'stop' } | { type: 'tone' };
+export type AudioCommand = { type: 'start'; deviceId: string; monitorId?: string } | { type: 'stop' } | { type: 'tone' }
+  | { type: 'settings'; settings: MixerSettings }
+  | { type: 'enqueue'; tracks: LocalTrack[] }
+  | { type: 'play' } | { type: 'pause' } | { type: 'next' }
+  | { type: 'select'; index: number } | { type: 'remove'; index: number }
+  | { type: 'seek'; seconds: number } | { type: 'clear' };
 export interface AudioState {
   status: 'off' | 'starting' | 'live'; micId: string | null; tone: boolean; error: string | null;
+  monitorId: string | null; queue: LocalTrack[]; index: number; playing: boolean;
+  position: number; duration: number; settings: MixerSettings;
+}
+export interface LocalTrack { id: string; title: string; url: string }
+export type Channel = 'mic' | 'music' | 'soundboard' | 'master';
+export interface MixerSettings {
+  levels: Record<Channel, number>; muted: Record<Channel, boolean>;
+  ducking: boolean; duckThreshold: number; duckDb: number;
+  mono: boolean; monitor: boolean; monitorMic: boolean; monitorVolume: number;
+}
+export interface Meters { mic: number; music: number; soundboard: number; master: number; ducking: boolean; reduction: number; overload: boolean }
+export const defaultSettings: MixerSettings = {
+  levels: { mic: 1, music: 0.6, soundboard: 0.6, master: 0.8 },
+  muted: { mic: false, music: false, soundboard: false, master: false },
+  ducking: true, duckThreshold: -40, duckDb: -12,
+  mono: false, monitor: true, monitorMic: false, monitorVolume: 0.7
+};
+export const emptyMeters: Meters = { mic: 0, music: 0, soundboard: 0, master: 0, ducking: false, reduction: 0, overload: false };
+export function initialAudioState(): AudioState {
+  return { status: 'off', micId: null, monitorId: null, tone: false, error: null,
+    queue: [], index: -1, playing: false, position: 0, duration: 0,
+    settings: structuredClone(defaultSettings) };
 }

@@ -1,13 +1,15 @@
-import { app, BrowserWindow, ipcMain, session } from 'electron';
+import { app, BrowserWindow, ipcMain, session, dialog } from 'electron';
 import path from 'node:path';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, stat } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import type { DeviceReport, AudioState, AudioCommand } from './shared';
+import { initialAudioState, emptyMeters, type DeviceReport, type AudioState, type AudioCommand, type LocalTrack, type Meters } from './shared';
+import { validCommand } from './commands';
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.setName('MicMix');
 const diagnose = process.argv.includes('--diagnose');
-const smokeTest = process.argv.includes('--smoke-phase1');
+const smokeTest = process.argv.includes('--smoke-phase1') || process.argv.includes('--smoke-phase2');
 // Diagnostics use their own cache so they can run beside the user's open app.
 if (diagnose || smokeTest) app.setPath('userData', path.join(app.getPath('temp'), 'micmix-diagnostics-' + process.pid));
 else if (!app.requestSingleInstanceLock()) app.quit();
@@ -15,7 +17,21 @@ let ui: BrowserWindow | null = null;
 let worker: BrowserWindow | null = null;
 let latest: DeviceReport | null = null;
 let timeout: NodeJS.Timeout | undefined;
-let audioState: AudioState = { status: 'off', micId: null, tone: false, error: null };
+let audioState: AudioState = initialAudioState();
+const localFiles = new Map<string, LocalTrack>();
+async function registerFiles(paths: string[]) {
+  if (!Array.isArray(paths) || paths.length > 200 || paths.some(p => typeof p !== 'string' || !path.isAbsolute(p) || !/\.(mp3|wav|flac|ogg)$/i.test(p))) {
+    throw new Error('Choose up to 200 local mp3, wav, flac, or ogg files.');
+  }
+  const tracks: LocalTrack[] = [];
+  for (const file of paths) {
+    if (!(await stat(file)).isFile()) throw new Error('Not an audio file: ' + path.basename(file));
+    const existing = [...localFiles.values()].find(t => t.url === pathToFileURL(file).href);
+    tracks.push(existing ?? { id: randomUUID(), title: path.basename(file), url: pathToFileURL(file).href });
+  }
+  for (const track of tracks) localFiles.set(track.id, track);
+  return tracks;
+}
 let commandId = 0;
 const pending = new Map<number, { resolve(): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
 function publishAudio(state: AudioState) {
@@ -49,6 +65,16 @@ app.whenReady().then(async () => {
         details.mediaTypes?.every(type => type === 'audio') === true))));
   session.defaultSession.setPermissionCheckHandler(() => false);
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  ipcMain.handle('files:pick', async event => {
+    if (event.sender !== ui?.webContents || event.senderFrame?.url !== uiUrl) throw new Error('Unauthorized');
+    const result = await dialog.showOpenDialog(ui!, { properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'flac', 'ogg'] }] });
+    return result.canceled ? [] : registerFiles(result.filePaths);
+  });
+  ipcMain.handle('files:drop', (event, paths: string[]) => {
+    if (event.sender !== ui?.webContents || event.senderFrame?.url !== uiUrl) throw new Error('Unauthorized');
+    return registerFiles(paths);
+  });
 
   ipcMain.handle('audio:get-state', event => {
     if (event.sender !== ui?.webContents || event.senderFrame?.url !== uiUrl) throw new Error('Unauthorized');
@@ -56,10 +82,14 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle('audio:command', (event, command: AudioCommand) => {
     if (event.sender !== ui?.webContents || event.senderFrame?.url !== uiUrl) throw new Error('Unauthorized');
-    if (!command || !['start', 'stop', 'tone'].includes(command.type) ||
-        (command.type === 'start' && (typeof command.deviceId !== 'string' || !command.deviceId || command.deviceId.length > 512))) {
+    if (!validCommand(command)) {
       throw new Error('Invalid audio command');
     }
+    if (command.type === 'enqueue') command = { type: 'enqueue', tracks: command.tracks.map(track => {
+      const registered = localFiles.get(track.id);
+      if (!registered) throw new Error('Choose this file with Add files or drag and drop first.');
+      return registered;
+    }) };
     if (!worker || worker.isDestroyed() || worker.webContents.isDestroyed()) throw new Error('Audio worker unavailable. Restart MicMix.');
     if (command.type === 'stop') cancelPending('Audio operation cancelled.');
     const id = ++commandId;
@@ -82,6 +112,9 @@ app.whenReady().then(async () => {
   });
   ipcMain.on('audio:state', (event, state: AudioState) => {
     if (isWorker(event.sender) && event.senderFrame?.url === audioUrl) publishAudio(state);
+  });
+  ipcMain.on('audio:meters', (event, meters: Meters) => {
+    if (isWorker(event.sender) && event.senderFrame?.url === audioUrl && ui && !ui.isDestroyed()) ui.webContents.send('audio:meters', meters);
   });
   app.on('second-instance', () => { if (ui) { if (ui.isMinimized()) ui.restore(); ui.show(); ui.focus(); } });
 
@@ -121,14 +154,15 @@ app.whenReady().then(async () => {
   protect(worker);
   worker.webContents.on('render-process-gone', (_event, details) => {
     cancelPending('Audio worker stopped. Restart MicMix.');
-    publishAudio({ status: 'off', micId: null, tone: false, error: 'Audio worker stopped. Restart MicMix.' });
+    publishAudio({ ...audioState, status: 'off', micId: null, monitorId: null, tone: false, playing: false, error: 'Audio worker stopped. Restart MicMix.' });
+    if (ui && !ui.isDestroyed()) ui.webContents.send('audio:meters', emptyMeters);
     publish({ devices: [], scannedAt: new Date().toISOString(), error: 'Audio worker stopped: ' + details.reason + '. Restart MicMix.',
       setSinkIdSupported: false, secureContext: false });
     if (diagnose) app.exit(1);
   });
   if (!diagnose) {
-    ui = new BrowserWindow({ width: 1050, height: 780, minWidth: 760, minHeight: 560,
-      title: 'MicMix — Phase 1', backgroundColor: '#101318', autoHideMenuBar: true,
+    ui = new BrowserWindow({ width: 1260, height: 850, minWidth: 900, minHeight: 640,
+      title: 'MicMix — Phase 2', backgroundColor: '#101318', autoHideMenuBar: true,
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
     protect(ui);
     ui.webContents.on('render-process-gone', () => {
@@ -151,8 +185,8 @@ app.whenReady().then(async () => {
     const deadline = Date.now() + 20000;
     while (!latest && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
     if (!latest) throw new Error('Smoke check timed out waiting for devices.');
-    const smoke = require(path.join(app.getAppPath(), 'scripts', 'smoke-phase1.cjs'));
-    await smoke(ui, worker, app.getAppPath());
+    const smoke = require(path.join(app.getAppPath(), 'scripts', process.argv.includes('--smoke-phase2') ? 'smoke-phase2.cjs' : 'smoke-phase1.cjs'));
+    await smoke(ui, worker, app.getAppPath(), registerFiles);
     app.quit();
   }
 }).catch(error => { console.error(error); app.exit(1); });

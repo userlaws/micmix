@@ -1,7 +1,8 @@
-import { contextBridge, ipcRenderer } from 'electron';
-import type { DeviceReport, MicMixBridge, AudioState, AudioCommand } from './shared';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import type { DeviceReport, MicMixBridge, AudioState, AudioCommand, Meters } from './shared';
 if (process.argv.includes('--audio-worker')) {
   contextBridge.exposeInMainWorld('audioHost', {
+    meters: (meters: Meters) => ipcRenderer.send('audio:meters', meters),
     state: (state: AudioState) => ipcRenderer.send('audio:state', state),
     onCommand: (callback: (id: number, command: AudioCommand) => void) => {
       ipcRenderer.on('audio:command', (_event, id, command) => callback(id, command));
@@ -12,6 +13,13 @@ if (process.argv.includes('--audio-worker')) {
   });
 } else {
   const api: MicMixBridge = {
+    pickFiles: () => ipcRenderer.invoke('files:pick'),
+    dropFiles: files => ipcRenderer.invoke('files:drop', files.map(file => webUtils.getPathForFile(file))),
+    onMeters: callback => {
+      const listener = (_event: Electron.IpcRendererEvent, meters: Meters) => callback(meters);
+      ipcRenderer.on('audio:meters', listener);
+      return () => { ipcRenderer.removeListener('audio:meters', listener); };
+    },
     getAudioState: () => ipcRenderer.invoke('audio:get-state'),
     command: command => ipcRenderer.invoke('audio:command', command),
     onAudioState: callback => {

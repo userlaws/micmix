@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc --noEmit && node scripts/build.mjs",
     "start": "npm run build && node scripts/start.mjs",
-    "check:devices": "npm run build && node scripts/start.mjs --diagnose"
+    "check:devices": "npm run build && node scripts/start.mjs --diagnose",
+    "check:phase2": "npm run build && node scripts/check-phase2.mjs"
   },
   "dependencies": {
     "react": "19.2.8",
