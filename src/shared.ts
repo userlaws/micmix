@@ -18,7 +18,7 @@ export type UpdateStatus =
   | { phase: 'error'; message: string; at: number };
 export interface SavedConfig extends SetupConfig { version: 1; settings: MixerSettings; queue: LocalTrack[]; pads: (SoundPad | null)[] }
 export interface MicMixBridge {
-  youtubeTrack(url: string): Promise<LocalTrack>;
+  youtubeTrack(input: string): Promise<LocalTrack | null>;
   videoBounds(bounds: VideoBounds | null): void;
   pickFiles(): Promise<LocalTrack[]>;
   dropFiles(files: File[]): Promise<LocalTrack[]>;
@@ -37,6 +37,7 @@ export interface MicMixBridge {
   clearPad(slot: number): Promise<void>;
   getIntegrations(): Promise<IntegrationStatus>;
   onIntegrations(callback: (status: IntegrationStatus) => void): () => void;
+  downloadVbCable(): Promise<void>;
   openVbCableSite(): Promise<void>;
   openDonation(): Promise<void>;
   getUpdate(): Promise<UpdateStatus>;

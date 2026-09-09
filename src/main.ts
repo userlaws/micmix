@@ -10,8 +10,9 @@ import { validAccelerator } from './hotkeys';
 import { loadConfig, saveConfig } from './config';
 import { integrationStatus } from './processes';
 import { checkForUpdates, installUpdate, updateStatus, onUpdateStatus, updatesSupported } from './updates';
-import { youtubeId } from './youtube-url';
+import { youtubeInput } from './youtube-url';
 import { YouTubeView } from './youtube-view';
+import { YouTubeSearch } from './youtube-search';
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.setName('MicMix');
@@ -26,6 +27,7 @@ else if (!app.requestSingleInstanceLock()) app.quit();
 let ui: BrowserWindow | null = null;
 let worker: BrowserWindow | null = null;
 let youtube: YouTubeView | null = null;
+let youtubeSearch: YouTubeSearch | null = null;
 let latest: DeviceReport | null = null;
 let timeout: NodeJS.Timeout | undefined;
 let audioState: AudioState = initialAudioState();
@@ -190,13 +192,17 @@ app.whenReady().then(async () => {
   });
   session.defaultSession.setPermissionCheckHandler(() => false);
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  ipcMain.handle('youtube:track', (event, url: string) => {
+  ipcMain.handle('youtube:track', async (event, value: string) => {
     if (!fromUi(event)) throw new Error('Unauthorized');
-    if (typeof url !== 'string' || url.length > 2048) throw new Error('Paste a YouTube video link.');
-    const videoId = youtubeId(url);
-    const track: LocalTrack = { id: randomUUID(), title: 'YouTube · ' + videoId, url: 'https://www.youtube.com/watch?v=' + videoId, youtubeId: videoId };
+    if (typeof value !== 'string') throw new Error('Enter a YouTube link or something to search for.');
+    const input = youtubeInput(value);
+    const selected = input.kind === 'video' ? { videoId: input.videoId, title: 'YouTube · ' + input.videoId }
+      : await youtubeSearch?.pick(input.query);
+    if (!selected) return null;
+    const track: LocalTrack = { id: randomUUID(), title: selected.title, url: 'https://www.youtube.com/watch?v=' + selected.videoId, youtubeId: selected.videoId };
     localFiles.set(track.id, track); return track;
   });
+  ipcMain.on('youtube-search:select', (event, data) => youtubeSearch?.event(event, data));
   ipcMain.handle('youtube:control', (event, command: YouTubeCommand) => {
     if (!fromWorker(event)) throw new Error('Unauthorized');
     if (!youtube || !command || !['load', 'play', 'pause', 'seek'].includes(command.type)) throw new Error('YouTube player unavailable.');
@@ -281,6 +287,10 @@ app.whenReady().then(async () => {
     if (!fromUi(event)) throw new Error('Unauthorized');
     config.updateCheck = enabled === true; scheduleSave();
     scheduleUpdateCheck();
+  });
+  ipcMain.handle('download:vbcable', event => {
+    if (!fromUi(event)) throw new Error('Unauthorized');
+    return shell.openExternal('https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack45.zip');
   });
   ipcMain.handle('open:vbcable', event => {
     if (!fromUi(event)) throw new Error('Unauthorized');
@@ -370,6 +380,7 @@ app.whenReady().then(async () => {
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
     protect(ui);
     youtube = new YouTubeView(ui, update => { if (worker && !worker.isDestroyed()) worker.webContents.send('audio:youtube', update); });
+    youtubeSearch = new YouTubeSearch(ui);
     ui.webContents.on('render-process-gone', () => {
       youtube?.pause();
       if (worker && !worker.isDestroyed()) worker.webContents.send('audio:command', ++commandId, { type: 'stop' });
@@ -402,6 +413,6 @@ app.whenReady().then(async () => {
 }).catch(error => { console.error(error); app.exit(1); });
 app.on('before-quit', () => {
   clearTimeout(timeout); clearInterval(integrationTimer);
-  globalShortcut.unregisterAll(); youtube?.close(); cancelPending('MicMix is closing.');
+  globalShortcut.unregisterAll(); youtubeSearch?.close(); youtube?.close(); cancelPending('MicMix is closing.');
   if (config) flushConfig();
 });

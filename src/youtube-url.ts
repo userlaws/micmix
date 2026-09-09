@@ -12,6 +12,24 @@ export function youtubeId(value: string): string {
   if (!id || !/^[A-Za-z0-9_-]{11}$/.test(id)) throw new Error('Use a YouTube video link, not a channel or playlist-only link.');
   return id;
 }
+
+export type YouTubeInput = { kind: 'video'; videoId: string } | { kind: 'search'; query: string };
+
+export function youtubeInput(value: string): YouTubeInput {
+  const input = value.trim();
+  if (!input) throw new Error('Enter a YouTube link or something to search for.');
+  if (input.length > 2048) throw new Error('That YouTube link or search is too long.');
+
+  // Keep URL-like input on the strict URL validation path. This prevents a mistyped or
+  // non-YouTube URL from silently becoming a YouTube search.
+  const schemed = /^[a-z][a-z0-9+.-]*:/i.test(input);
+  const bareYouTube = /^(?:(?:www|m|music)\.)?youtube\.com\/|^youtu\.be\//i.test(input);
+  if (schemed || bareYouTube) {
+    return { kind: 'video', videoId: youtubeId(bareYouTube && !schemed ? 'https://' + input : input) };
+  }
+  if (input.length > 200) throw new Error('Keep YouTube searches under 200 characters.');
+  return { kind: 'search', query: input };
+}
 export function youtubeError(code: number) {
   if (code === 101 || code === 150) return 'This video blocks embedding, try another';
   if (code === 100) return 'This video is unavailable or private. Try another link.';

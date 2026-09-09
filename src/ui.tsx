@@ -171,6 +171,7 @@ function App() {
     setError(''); setBusy(true);
     try {
       const track = await window.micmix.youtubeTrack(youtubeUrl);
+      if (!track) return;
       const before = await window.micmix.getAudioState();
       await window.micmix.command({ type: 'enqueue', tracks: [track] });
       if (before.queue.length) await window.micmix.command({ type: 'select', index: before.queue.length });
@@ -206,6 +207,7 @@ function App() {
   const canGoLive = !(busy || !micId || !cable || !report?.setSinkIdSupported || (audio.settings.monitor && !monitorId));
   const problem = error || audio.error || report?.error;
   const s = audio.settings;
+  const youtubeLooksLikeLink = /^(?:https?:\/\/|(?:(?:www|m|music)\.)?youtube\.com\/|youtu\.be\/)/i.test(youtubeUrl.trim());
   return <main onDragOver={e => { e.preventDefault(); }} onDrop={e => { e.preventDefault(); }}>
     <div className="titlebar">MicMix</div>
     {wizard && <Wizard cable={cable} reportError={report?.error ?? null} microphones={microphones} playbacks={playbacks}
@@ -239,14 +241,14 @@ function App() {
       <section className={'card music ' + (dragging ? 'dragging' : '')}
         onDragEnter={e => { e.preventDefault(); setDragging(true); }} onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false); }}
         onDrop={e => { e.preventDefault(); setDragging(false); void addFiles(Array.from(e.dataTransfer.files)); }}>
-        <div className="card-head"><div><h2>Music</h2><div className="sub">Add a YouTube link or play a local file</div></div>
+        <div className="card-head"><div><h2>Music</h2><div className="sub">Search YouTube, paste a link, or play a local file</div></div>
           <div className="segment" role="tablist">
             <button role="tab" aria-selected={source === 'youtube'} className={source === 'youtube' ? 'on' : ''} onClick={() => setSource('youtube')}><Icon name="youtube" size={16} />YouTube</button>
             <button role="tab" aria-selected={source === 'local'} className={source === 'local' ? 'on' : ''} onClick={() => setSource('local')}><Icon name="file" size={16} />Local file</button>
           </div></div>
         {source === 'youtube' ? <form className="source-row" onSubmit={e => { e.preventDefault(); void addYouTube(); }}>
-          <div className="input-wrap"><Icon name="link" size={18} /><input aria-label="YouTube URL" type="url" required placeholder="Paste a YouTube link…" value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} /></div>
-          <button className="btn primary" disabled={busy || !youtubeUrl.trim()} type="submit">Load</button>
+          <div className="input-wrap"><Icon name="youtube" size={18} /><input aria-label="Search YouTube or paste a video link" type="text" required maxLength={2048} placeholder="Search YouTube or paste a video link…" value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} /></div>
+          <button className="btn primary" disabled={busy || !youtubeUrl.trim()} type="submit">{youtubeLooksLikeLink ? 'Load' : 'Search'}</button>
         </form> : <div className="source-row">
           <div className="drop-hint"><Icon name="file" size={18} />Drop MP3, WAV, FLAC or OGG files anywhere on this card</div>
           <button className="btn primary" disabled={busy} onClick={() => void addFiles()}><Icon name="plus" size={16} />Add files</button>
@@ -257,7 +259,7 @@ function App() {
           <div className="now"><div className={'art ' + (current ? '' : 'idle')}><Icon name="music" size={48} /></div>
             <div className="now-body"><span className="eyebrow">{audio.playing ? 'Now playing' : current ? 'Ready to play' : 'Music sources'}</span>
               <h3>{current?.title ?? 'Bring your music'}</h3>
-              <p>{current ? 'Local file · ' + (audio.index + 1) + ' of ' + audio.queue.length : 'Paste a YouTube link, or add local files'}</p>
+              <p>{current ? 'Local file · ' + (audio.index + 1) + ' of ' + audio.queue.length : 'Search YouTube, paste a link, or add local files'}</p>
               {!live && <small>Go live to play. Off air pauses and silences all audio.</small>}</div></div>}
           <div className="seek"><input className="thin" aria-label="Seek music" type="range" min="0" max={audio.duration || 1} step="0.1" value={Math.min(audio.position, audio.duration || 1)}
             style={pct(audio.duration ? Math.min(1, audio.position / audio.duration) : 0)}

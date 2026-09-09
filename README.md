@@ -32,8 +32,9 @@ Windows 11 · Electron + React + TypeScript · no account, no cloud, no download
      `CABLE Output (VB-Audio Virtual Cable)`**.
    MicMix shows a green indicator in the footer when Discord or FiveM is running.
 
-4. **Go LIVE and add sound.** Press **● LIVE**. Drop MP3/WAV/FLAC/OGG files or
-   **paste a YouTube link** into Music and press **Play**. Assign clips to the
+4. **Go LIVE and add sound.** Press **● LIVE**. Drop MP3/WAV/FLAC/OGG files,
+   **search YouTube inside MicMix**, or paste a YouTube link into Music, then
+   press **Play**. Assign clips to the
    **Soundboard** (Edit → Choose clip) and give them global hotkeys that work
    even in-game. Everything mixes under the **Mic / Music / Pads / Master**
    faders.

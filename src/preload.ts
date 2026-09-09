@@ -40,6 +40,7 @@ if (process.argv.includes('--audio-worker')) {
     clearPad: slot => ipcRenderer.invoke('pads:clear', slot),
     getIntegrations: () => ipcRenderer.invoke('integrations:get'),
     onIntegrations: subscribe<IntegrationStatus>('integrations:status'),
+    downloadVbCable: () => ipcRenderer.invoke('download:vbcable'),
     openVbCableSite: () => ipcRenderer.invoke('open:vbcable'),
     openDonation: () => ipcRenderer.invoke('open:donate'),
     getUpdate: () => ipcRenderer.invoke('update:get'),

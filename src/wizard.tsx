@@ -11,6 +11,7 @@ const STEPS = ['Virtual mic', 'Devices', 'Test', 'Discord'];
 export function Wizard(props: Props) {
   const { cable, audio, busy } = props;
   const [step, setStep] = useState(0);
+  const [downloadError, setDownloadError] = useState('');
   const [meters, setMeters] = useState(emptyMeters);
   useEffect(() => window.micmix.onMeters(setMeters), []);
   const live = audio.status === 'live';
@@ -23,9 +24,13 @@ export function Wizard(props: Props) {
         <div className={'ok-badge ' + (cable ? '' : 'bad')}><Icon name={cable ? 'check' : 'close'} size={22} /></div>
         <h3>{cable ? 'MicMix Virtual Mic is installed' : 'MicMix Virtual Mic is missing'}</h3>
         {cable ? <p>Windows lists it as <strong>CABLE Input</strong> (playback) and <strong>CABLE Output</strong> (recording). MicMix sends your mix into CABLE Input; Discord and games listen on CABLE Output.</p>
-          : <><p>MicMix needs the VB-CABLE driver. Repair: install VB-CABLE from vb-audio.com (run its setup as administrator), then restart Windows or the Windows Audio service, and rescan. Windows must list <strong>CABLE Input</strong> and <strong>CABLE Output</strong>.</p>
+          : <><p>Download the VB-CABLE driver ZIP, extract it, and run <strong>VBCABLE_Setup_x64.exe</strong> as administrator. After installation, restart Windows if prompted, then rescan devices. Windows must list <strong>CABLE Input</strong> and <strong>CABLE Output</strong>.</p>
             {props.reportError && <p className="error-text">{props.reportError}</p>}
-            <div className="wizard-actions"><button className="btn" onClick={() => void window.micmix.openVbCableSite()}>Open vb-audio.com/Cable</button>
+            {downloadError && <p className="error-text" role="alert">{downloadError}</p>}
+            <div className="wizard-actions"><button className="btn" onClick={() => {
+              setDownloadError('');
+              void window.micmix.downloadVbCable().catch(() => setDownloadError('Could not start the driver download. Please try again.'));
+            }}>Download VB-CABLE</button>
               <button className="btn" onClick={() => void window.micmix.refreshDevices().catch(() => {})}><Icon name="refresh" size={16} />Rescan devices</button></div></>}
       </div>}
       {step === 1 && <div>
