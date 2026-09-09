@@ -9,7 +9,8 @@ export function validSettings(value: unknown): value is MixerSettings {
   }) && ['ducking', 'mono', 'monitor', 'monitorMic'].every(key => typeof s[key as keyof MixerSettings] === 'boolean') &&
     Number.isFinite(s.duckThreshold) && s.duckThreshold >= -60 && s.duckThreshold <= -10 &&
     Number.isFinite(s.duckDb) && s.duckDb >= -30 && s.duckDb <= 0 &&
-    Number.isFinite(s.monitorVolume) && s.monitorVolume >= 0 && s.monitorVolume <= 1;
+    Number.isFinite(s.monitorVolume) && s.monitorVolume >= 0 && s.monitorVolume <= 1 &&
+    Number.isFinite(s.monitorMusicVolume) && s.monitorMusicVolume >= 0 && s.monitorMusicVolume <= 1;
 }
 export function validTrack(value: unknown): value is LocalTrack {
   const t = value as LocalTrack;

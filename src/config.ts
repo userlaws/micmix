@@ -14,7 +14,11 @@ export function parseConfig(text: string): SavedConfig {
   if (!raw || typeof raw !== 'object') return config;
   if (typeof raw.setupDone === 'boolean') config.setupDone = raw.setupDone;
   for (const key of ['micLabel', 'monitorLabel'] as const) if (typeof raw[key] === 'string' && raw[key]!.length <= 300) config[key] = raw[key]!;
-  if (validSettings(raw.settings)) config.settings = raw.settings;
+  // Merge onto defaults so a config saved before a new setting existed still loads (keeping its other tuning).
+  if (raw.settings && typeof raw.settings === 'object') {
+    const merged = { ...defaultSettings, ...(raw.settings as SavedConfig['settings']) };
+    if (validSettings(merged)) config.settings = merged;
+  }
   if (Array.isArray(raw.queue)) config.queue = raw.queue.filter(validTrack).slice(0, 500);
   if (validPads(raw.pads)) config.pads = raw.pads;
   return config;

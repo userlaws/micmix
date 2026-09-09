@@ -29,12 +29,28 @@ export async function run() {
   const music = await render(true, false, false, 'music');
   results.monitorMusicPeak = peak(music.getChannelData(0));
   assert(results.monitorMusicPeak > 0.1, 'Music missing from monitor');
+  // A quarter headphone-music level must quarter the monitor music but leave the outgoing mix untouched.
+  async function musicPeak(monitor: boolean, monitorMusicVolume: number) {
+    const c = new OfflineAudioContext(2, 48000, 48000);
+    const st = structuredClone(defaultSettings);
+    st.levels = { mic: 1, music: 1, soundboard: 1, master: 1 }; st.monitorVolume = 1; st.monitorMusicVolume = monitorMusicVolume;
+    const g = createMixerGraph(c, st);
+    const b = c.createBuffer(1, 48000, 48000);
+    for (let i = 0; i < 48000; i++) b.getChannelData(0)[i] = Math.sin(i * 2 * Math.PI * 220 / 48000) * 0.4;
+    const n = c.createBufferSource(); n.buffer = b; n.connect(g.music);
+    (monitor ? g.monitorOut : g.virtualOut).connect(c.destination); n.start();
+    return peak((await c.startRendering()).getChannelData(0));
+  }
+  const [monFull, monQuarter, outFull, outQuarter] = await Promise.all([musicPeak(true, 1), musicPeak(true, 0.25), musicPeak(false, 1), musicPeak(false, 0.25)]);
+  results.monitorMusicQuarterRatio = monQuarter / monFull;
+  assert(results.monitorMusicQuarterRatio > 0.2 && results.monitorMusicQuarterRatio < 0.3, 'Headphone music level did not scale monitor music');
+  assert(Math.abs(outFull - outQuarter) < 0.001, 'Headphone music level leaked into the outgoing mix');
   const mono = await render(false, false, true, 'music');
   results.monoChannelsEqual = mono.getChannelData(0).every((v, i) => Math.abs(v - mono.getChannelData(1)[i]) < 0.000001);
   assert(results.monoChannelsEqual, 'Mono output channels differ');
   const ctx = new OfflineAudioContext(1, 96000, 48000);
   const settings = structuredClone(defaultSettings);
-  settings.levels.music = settings.levels.master = 1;
+  settings.levels.music = settings.levels.master = 1; settings.duckDb = -12;
   const graph = createMixerGraph(ctx, settings);
   const source = ctx.createConstantSource(); source.offset.value = 0.1; source.connect(graph.music);
   graph.virtualOut.connect(ctx.destination); source.start();

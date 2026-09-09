@@ -73,7 +73,7 @@ export type Channel = 'mic' | 'music' | 'soundboard' | 'master';
 export interface MixerSettings {
   levels: Record<Channel, number>; muted: Record<Channel, boolean>;
   ducking: boolean; duckThreshold: number; duckDb: number;
-  mono: boolean; monitor: boolean; monitorMic: boolean; monitorVolume: number;
+  mono: boolean; monitor: boolean; monitorMic: boolean; monitorVolume: number; monitorMusicVolume: number;
 }
 export interface Meters { mic: number; music: number; soundboard: number; master: number; ducking: boolean; reduction: number; overload: boolean }
 export const defaultSettings: MixerSettings = {
@@ -81,8 +81,10 @@ export const defaultSettings: MixerSettings = {
   levels: { mic: 1, music: 1, soundboard: 1, master: 1 },
   muted: { mic: false, music: false, soundboard: false, master: false },
   // -30 dBFS RMS: a sensitive condenser in a normal room sits well below this; speech sits above it.
-  ducking: true, duckThreshold: -30, duckDb: -12,
-  mono: false, monitor: true, monitorMic: false, monitorVolume: 0.7
+  // -8 dB duck: music stays present under your voice; still adjustable in Settings.
+  ducking: true, duckThreshold: -30, duckDb: -8,
+  // monitorMusicVolume scales music/pads in YOUR headphones only, never the outgoing mix.
+  mono: false, monitor: true, monitorMic: false, monitorVolume: 0.7, monitorMusicVolume: 1
 };
 export const emptyMeters: Meters = { mic: 0, music: 0, soundboard: 0, master: 0, ducking: false, reduction: 0, overload: false };
 export function initialAudioState(): AudioState {
