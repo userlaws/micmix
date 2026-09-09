@@ -53,7 +53,7 @@
       "target": [
         "nsis"
       ],
-      "artifactName": "MicMix-Setup-${version}.${ext}",
+      "artifactName": "MicMix-Setup.${ext}",
       "icon": "build/icon.ico"
     },
     "nsis": {
@@ -69,5 +69,10 @@
       "uninstallerIcon": "build/icon.ico",
       "installerHeaderIcon": "build/icon.ico"
     }
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/userlaws/micmix.git"
+  },
+  "homepage": "https://userlaws.github.io/micmix"
 }

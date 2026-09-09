@@ -7,7 +7,8 @@ export const PAD_COUNT = 9;
 export interface SoundPad { slot: number; id: string; title: string; url: string; hotkey: string | null }
 export interface PadState extends SoundPad { ready: boolean; error: string | null }
 export interface IntegrationStatus { discord: boolean; fivem: boolean }
-export interface SetupConfig { setupDone: boolean; micLabel: string | null; monitorLabel: string | null }
+export interface SetupConfig { setupDone: boolean; micLabel: string | null; monitorLabel: string | null; updateCheck: boolean }
+export interface UpdateInfo { version: string; url: string }
 export interface SavedConfig extends SetupConfig { version: 1; settings: MixerSettings; queue: LocalTrack[]; pads: (SoundPad | null)[] }
 export interface MicMixBridge {
   youtubeTrack(url: string): Promise<LocalTrack>;
@@ -31,6 +32,10 @@ export interface MicMixBridge {
   onIntegrations(callback: (status: IntegrationStatus) => void): () => void;
   openVbCableSite(): Promise<void>;
   openDonation(): Promise<void>;
+  getUpdate(): Promise<UpdateInfo | null>;
+  onUpdate(callback: (update: UpdateInfo | null) => void): () => void;
+  openReleases(): Promise<void>;
+  setUpdateCheck(enabled: boolean): Promise<void>;
 }
 declare global {
   // Chromium supports these APIs; TypeScript 5.9's DOM declarations omit them.

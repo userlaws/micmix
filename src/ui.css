@@ -112,6 +112,8 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .air { padding: 11px 18px; font-size: 14px; font-weight: 600; border-radius: 12px; }
 .air.live { background: rgba(255, 255, 255, 0.1); border-color: var(--line-2); }
 .gear { width: 46px; height: 46px; border-radius: 14px; }
+.btn.update { background: rgba(48, 209, 88, 0.16); border-color: rgba(48, 209, 88, 0.45); color: #7df0a0; font-weight: 600; }
+.btn.update:hover:not(:disabled) { background: rgba(48, 209, 88, 0.26); }
 
 /* Device row */
 .devices { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; padding: 14px 16px; }

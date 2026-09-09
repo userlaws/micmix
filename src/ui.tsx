@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
-import { initialAudioState, emptyMeters, cablePresent, type DeviceReport, type AudioCommand, type MixerSettings, type Channel, type SetupConfig, type IntegrationStatus, type Meters } from './shared';
+import { initialAudioState, emptyMeters, cablePresent, type DeviceReport, type AudioCommand, type MixerSettings, type Channel, type SetupConfig, type IntegrationStatus, type Meters, type UpdateInfo } from './shared';
 import { microphoneChoices, playbackChoices } from './devices';
 import { Soundboard } from './soundboard-panel';
 import { Wizard } from './wizard';
@@ -56,6 +56,7 @@ function App() {
   const [meters, setMeters] = useState(emptyMeters);
   const [config, setConfig] = useState<(SetupConfig & { appVersion: string }) | null>(null);
   const [integrations, setIntegrations] = useState<IntegrationStatus>({ discord: false, fivem: false });
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [error, setError] = useState('');
   const [micId, setMicId] = useState('');
   const [monitorId, setMonitorId] = useState('');
@@ -73,11 +74,13 @@ function App() {
     const offReport = window.micmix.onReport(value => { receivedReport = true; setReport(value); });
     const offIntegrations = window.micmix.onIntegrations(value => { receivedIntegrations = true; setIntegrations(value); });
     const offMeters = window.micmix.onMeters(setMeters);
+    const offUpdate = window.micmix.onUpdate(setUpdate);
+    void window.micmix.getUpdate().then(setUpdate).catch(() => {});
     void window.micmix.getAudioState().then(value => { if (!receivedState) setAudio(value); }).catch(e => setError(String(e)));
     void window.micmix.getReport().then(value => { if (!receivedReport) setReport(value); }).catch(e => setError(String(e)));
     void window.micmix.getIntegrations().then(value => { if (!receivedIntegrations) setIntegrations(value); }).catch(() => {});
     void window.micmix.getConfig().then(setConfig).catch(e => setError(String(e)));
-    return () => { offState(); offReport(); offIntegrations(); offMeters(); };
+    return () => { offState(); offReport(); offIntegrations(); offMeters(); offUpdate(); };
   }, []);
   const microphones = microphoneChoices(report?.devices ?? []);
   const playbacks = playbackChoices(report?.devices ?? []);
@@ -182,6 +185,7 @@ function App() {
             onClick={() => void send(audio.status === 'off' ? { type: 'start', deviceId: micId, monitorId } : { type: 'stop' })}>
             <Icon name={live ? 'stop' : audio.status === 'starting' ? 'close' : 'bolt'} size={16} />{live ? 'Go off air' : audio.status === 'starting' ? 'Cancel' : 'Go live'}</button>
         </div>
+        {update && <button className="btn update" title={'MicMix ' + update.version + ' is available. Opens the download page.'} onClick={() => void window.micmix.openReleases()}><Icon name="bolt" size={16} />Update to v{update.version}</button>}
         <button className="btn icon gear" aria-label="Settings" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(!settingsOpen)}><Icon name="gear" size={22} /></button>
       </div>
     </header>
@@ -281,6 +285,8 @@ function App() {
             <div className="row"><div className="row-label"><span>Test tone</span><small>1.5 s at 440 Hz into the virtual mic</small></div>
               <button className="btn" disabled={!live || audio.tone || busy} onClick={() => void send({ type: 'tone' })}>{audio.tone ? 'Sending tone…' : 'Send test tone'}</button></div>
             <div className="row"><div className="row-label"><span>Rescan devices</span></div><button className="btn" onClick={() => void window.micmix.refreshDevices().catch(e => setError(String(e)))}><Icon name="refresh" size={16} />Rescan</button></div>
+            <div className="row"><div className="row-label"><span>Check for updates</span><small>Asks GitHub for the newest release on launch and shows a link. Nothing is installed automatically.</small></div>
+              <Switch checked={config?.updateCheck ?? true} onChange={enabled => { if (config) setConfig({ ...config, updateCheck: enabled }); void window.micmix.setUpdateCheck(enabled).catch(e => setError(String(e))); }} label="Check for updates" /></div>
             <div className="row"><div className="row-label"><span>Setup assistant</span><small>Settings, devices, queue and pads are saved automatically.</small></div>
               <button className="btn" onClick={() => { setSettingsOpen(false); setWizard(true); }}>Run setup again</button></div>
           </div>
@@ -295,7 +301,8 @@ function App() {
             <div className="row"><img className="about-art" src="./brand/micmix-primary-1024.png" alt="MicMix logo" width={96} height={96} /><p>One microphone for your voice plus music, YouTube and a soundboard, routed into Discord, FiveM and any app through the MicMix Virtual Mic.</p>
               <p>The virtual microphone is <strong>VB-CABLE</strong> by <strong>VB-Audio Software</strong>, included as donationware. If MicMix is useful, please support its author.</p>
               <div className="actions"><button className="btn primary" onClick={() => void window.micmix.openDonation()}><Icon name="heart" size={16} />Donate to VB-Audio</button>
-                <button className="btn" onClick={() => void window.micmix.openVbCableSite()}>vb-audio.com/Cable</button></div></div>
+                <button className="btn" onClick={() => void window.micmix.openVbCableSite()}>vb-audio.com/Cable</button>
+                <button className="btn" onClick={() => void window.micmix.openReleases()}>{update ? 'Get MicMix ' + update.version : 'Releases on GitHub'}</button></div></div>
           </div>
         </div>
       </section>

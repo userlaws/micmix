@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import type { DeviceReport, MicMixBridge, AudioState, AudioCommand, Meters, YouTubeCommand, YouTubeUpdate, IntegrationStatus } from './shared';
+import type { DeviceReport, MicMixBridge, AudioState, AudioCommand, Meters, YouTubeCommand, YouTubeUpdate, IntegrationStatus, UpdateInfo } from './shared';
 if (process.argv.includes('--audio-worker')) {
   contextBridge.exposeInMainWorld('audioHost', {
     youtube: (command: YouTubeCommand) => ipcRenderer.invoke('youtube:control', command),
@@ -41,7 +41,11 @@ if (process.argv.includes('--audio-worker')) {
     getIntegrations: () => ipcRenderer.invoke('integrations:get'),
     onIntegrations: subscribe<IntegrationStatus>('integrations:status'),
     openVbCableSite: () => ipcRenderer.invoke('open:vbcable'),
-    openDonation: () => ipcRenderer.invoke('open:donate')
+    openDonation: () => ipcRenderer.invoke('open:donate'),
+    getUpdate: () => ipcRenderer.invoke('update:get'),
+    onUpdate: subscribe<UpdateInfo | null>('update:status'),
+    openReleases: () => ipcRenderer.invoke('update:open'),
+    setUpdateCheck: enabled => ipcRenderer.invoke('config:update-check', enabled)
   };
   contextBridge.exposeInMainWorld('micmix', api);
 }

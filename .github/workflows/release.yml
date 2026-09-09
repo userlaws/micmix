@@ -1,0 +1,58 @@
+# Builds the Windows installer and publishes a GitHub Release whenever a version tag (v1.2.3) is pushed.
+# Release flow: `npm version patch` (or minor/major) then `git push --follow-tags`.
+# The tag must match package.json's version; the job refuses to build otherwise.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Check tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          pkg="v$(node -p "require('./package.json').version")"
+          tag="${GITHUB_REF#refs/tags/}"
+          if [ "$pkg" != "$tag" ]; then echo "package.json is $pkg but tag is $tag"; exit 1; fi
+      - run: npm ci
+      # Standard VB-CABLE (donationware by VB-Audio) is fetched at build time and bundled by build/installer.nsh.
+      # Redistribution of the standard package is permitted with attribution and a donation link, which the
+      # installer license page and Settings > About provide. Never bundle A+B or C+D.
+      - name: Fetch VB-CABLE driver pack
+        shell: bash
+        run: |
+          curl -fsSL -o vbcable.zip https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack45.zip
+          unzip -q -o vbcable.zip -d build/vbcable
+          ls build/vbcable
+          test -f build/vbcable/VBCABLE_Setup_x64.exe
+      - name: Build installer
+        run: npm run dist:win
+        env:
+          # Unsigned build: electron-builder must not try to sign. Add a certificate here later if you get one.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: |
+            release/MicMix-Setup.exe
+            release/MicMix-Setup.exe.blockmap
+          generate_release_notes: true
+      - name: Keep installer as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MicMix-Setup
+          path: release/MicMix-Setup.exe

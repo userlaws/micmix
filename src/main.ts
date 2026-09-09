@@ -9,6 +9,8 @@ import { validCommand } from './commands';
 import { validAccelerator } from './hotkeys';
 import { loadConfig, saveConfig } from './config';
 import { integrationStatus } from './processes';
+import { checkForUpdate, releasesUrl } from './updates';
+import type { UpdateInfo } from './shared';
 import { youtubeId } from './youtube-url';
 import { YouTubeView } from './youtube-view';
 
@@ -160,6 +162,21 @@ function protect(win: BrowserWindow) {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', event => event.preventDefault());
 }
+// Update notice: one request to GitHub's releases API, then a link in the UI. Nothing is downloaded.
+let update: UpdateInfo | null = null;
+let updateTimer: NodeJS.Timeout | null = null;
+function publishUpdate() { if (ui && !ui.isDestroyed()) ui.webContents.send('update:status', update); }
+async function runUpdateCheck() {
+  try { update = await checkForUpdate(); } catch { update = null; }
+  publishUpdate();
+}
+function scheduleUpdateCheck() {
+  if (updateTimer) { clearTimeout(updateTimer); updateTimer = null; }
+  // Only packaged builds phone GitHub, so development runs and smoke checks stay offline.
+  if (!config.updateCheck || !(app.isPackaged || process.env.MICMIX_UPDATE_CHECK === '1')) return;
+  const tick = () => { void runUpdateCheck(); updateTimer = setTimeout(tick, 6 * 60 * 60 * 1000); };
+  updateTimer = setTimeout(tick, 8000);
+}
 app.whenReady().then(async () => {
   config = loadConfig(configPath());
   const audioSession = session.fromPartition('micmix-audio');
@@ -247,7 +264,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle('config:get', event => {
     if (!fromUi(event)) throw new Error('Unauthorized');
-    return { setupDone: config.setupDone, micLabel: config.micLabel, monitorLabel: config.monitorLabel, appVersion: app.getVersion() };
+    return { setupDone: config.setupDone, micLabel: config.micLabel, monitorLabel: config.monitorLabel, updateCheck: config.updateCheck, appVersion: app.getVersion() };
   });
   ipcMain.handle('config:devices', (event, micLabel: string | null, monitorLabel: string | null) => {
     if (!fromUi(event)) throw new Error('Unauthorized');
@@ -260,6 +277,19 @@ app.whenReady().then(async () => {
     config.setupDone = true; flushConfig();
   });
   ipcMain.handle('integrations:get', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return integrations; });
+  ipcMain.handle('update:get', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return update; });
+  ipcMain.handle('update:open', event => {
+    if (!fromUi(event)) throw new Error('Unauthorized');
+    const url = update?.url ?? releasesUrl;
+    if (!url) throw new Error('No release page configured.');
+    return shell.openExternal(url);
+  });
+  ipcMain.handle('config:update-check', (event, enabled: boolean) => {
+    if (!fromUi(event)) throw new Error('Unauthorized');
+    config.updateCheck = enabled === true; scheduleSave();
+    if (!config.updateCheck) { update = null; publishUpdate(); }
+    scheduleUpdateCheck();
+  });
   ipcMain.handle('open:vbcable', event => {
     if (!fromUi(event)) throw new Error('Unauthorized');
     return shell.openExternal('https://vb-audio.com/Cable/');
@@ -356,6 +386,7 @@ app.whenReady().then(async () => {
     await ui.loadFile(path.join(__dirname, 'index.html'));
     ui.show();
     ui.focus();
+    scheduleUpdateCheck();
   }
   timeout = setTimeout(() => {
     if (latest) return;

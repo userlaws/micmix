@@ -110,3 +110,14 @@ Architecture and phase-by-phase checkpoints live in [CLAUDE.md](CLAUDE.md).
 The MicMix Virtual Mic is **VB-CABLE** by **Vincent Burel / VB-Audio Software**
 (<https://vb-audio.com>), included as donationware. If MicMix is useful to you,
 please **donate to VB-Audio** — it's what keeps the virtual cable free.
+
+## Releases, updates and the website
+
+Everything ships from GitHub (`userlaws/micmix`):
+
+1. **Ship a new version.** Run `npm version patch` (or `minor` / `major`), then `git push --follow-tags`. The tag triggers `.github/workflows/release.yml`, which fetches the standard VB-CABLE pack, builds `MicMix-Setup.exe` on a Windows runner and publishes a GitHub Release with generated notes.
+2. **Users get it.** The website's download button always points at `releases/latest/download/MicMix-Setup.exe`, and installed copies check the releases API on launch (at most every six hours) and show an "Update to vX.Y.Z" button that opens the release page. MicMix never downloads or installs updates by itself; the check can be turned off in Settings.
+3. **Website.** Any push to `main` that touches `site/` deploys it to GitHub Pages through `.github/workflows/site.yml`.
+4. **CI.** `.github/workflows/ci.yml` type-checks and bundles the app and the site on every push and pull request.
+
+The installer is unsigned, so Windows SmartScreen shows a warning until the build gains reputation or a code-signing certificate is added to the release workflow.

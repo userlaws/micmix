@@ -1,0 +1,12 @@
+{
+  "name": "MicMix",
+  "short_name": "MicMix",
+  "description": "Mix your microphone and music into one virtual microphone.",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "theme_color": "#071126",
+  "background_color": "#071126",
+  "display": "standalone"
+}

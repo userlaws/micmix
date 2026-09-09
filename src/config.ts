@@ -4,7 +4,7 @@ import { defaultSettings, PAD_COUNT, type SavedConfig } from './shared';
 import { validSettings, validTrack, validPads } from './commands';
 // Plain JSON in userData. Unknown or damaged content falls back to defaults field by field; never crashes.
 export function defaultConfig(): SavedConfig {
-  return { version: 1, setupDone: false, micLabel: null, monitorLabel: null, settings: structuredClone(defaultSettings), queue: [],
+  return { version: 1, setupDone: false, micLabel: null, monitorLabel: null, updateCheck: true, settings: structuredClone(defaultSettings), queue: [],
     pads: Array.from({ length: PAD_COUNT }, () => null) };
 }
 export function parseConfig(text: string): SavedConfig {
@@ -13,6 +13,7 @@ export function parseConfig(text: string): SavedConfig {
   try { raw = JSON.parse(text); } catch { return config; }
   if (!raw || typeof raw !== 'object') return config;
   if (typeof raw.setupDone === 'boolean') config.setupDone = raw.setupDone;
+  if (typeof raw.updateCheck === 'boolean') config.updateCheck = raw.updateCheck;
   for (const key of ['micLabel', 'monitorLabel'] as const) if (typeof raw[key] === 'string' && raw[key]!.length <= 300) config[key] = raw[key]!;
   // Merge onto defaults so a config saved before a new setting existed still loads (keeping its other tuning).
   if (raw.settings && typeof raw.settings === 'object') {
