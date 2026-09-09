@@ -342,8 +342,9 @@ app.whenReady().then(async () => {
     if (diagnose) app.exit(1);
   });
   if (!diagnose) {
-    ui = new BrowserWindow({ width: 1260, height: 850, minWidth: 900, minHeight: 640,
-      title: 'MicMix', backgroundColor: '#101318', autoHideMenuBar: true,
+    ui = new BrowserWindow({ width: 1400, height: 920, minWidth: 960, minHeight: 680,
+      title: 'MicMix', backgroundColor: '#0b0e14', autoHideMenuBar: true,
+      titleBarStyle: 'hidden', titleBarOverlay: { color: '#0b0e14', symbolColor: '#c9d0dc', height: 40 },
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
     protect(ui);
     youtube = new YouTubeView(ui, update => { if (worker && !worker.isDestroyed()) worker.webContents.send('audio:youtube', update); });
