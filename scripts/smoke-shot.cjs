@@ -23,5 +23,17 @@ module.exports = async function smoke(ui, worker, root) {
   await evalUi(`document.querySelector('.about').scrollIntoView({ block: 'end' })`);
   await sleep(300);
   await writeFile(path.join(shots, 'shot-about.png'), (await ui.webContents.capturePage()).toPNG());
+  if (process.env.MICMIX_UPDATE_SIMULATE === '1') {
+    await evalUi(`document.querySelector('[aria-label="Close settings"]')?.click()`);
+    const waitPhase = async (phases, limit) => { for (let i = 0; i < limit; i++) { const u = await evalUi(`window.micmix.getUpdate()`); if (phases.includes(u.phase)) return u; await sleep(150); } throw new Error('update phase timeout: ' + phases); };
+    const mid = await waitPhase(['downloading'], 80);
+    await sleep(1800);
+    await writeFile(path.join(shots, 'shot-update-downloading.png'), (await ui.webContents.capturePage()).toPNG());
+    const done = await waitPhase(['downloaded', 'installing'], 80);
+    await sleep(250);
+    await writeFile(path.join(shots, 'shot-update-done.png'), (await ui.webContents.capturePage()).toPNG());
+    const end = await waitPhase(['upToDate'], 80);
+    console.log('Update simulation:', JSON.stringify({ mid: mid.phase, done: done.phase, end: end.phase, version: end.version }));
+  }
   console.log('Screenshots written:', JSON.stringify(layout));
 };

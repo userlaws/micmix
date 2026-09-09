@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
-import { initialAudioState, emptyMeters, cablePresent, type DeviceReport, type AudioCommand, type MixerSettings, type Channel, type SetupConfig, type IntegrationStatus, type Meters, type UpdateInfo } from './shared';
+import { initialAudioState, emptyMeters, cablePresent, type DeviceReport, type AudioCommand, type MixerSettings, type Channel, type SetupConfig, type IntegrationStatus, type Meters, type UpdateStatus } from './shared';
 import { microphoneChoices, playbackChoices } from './devices';
 import { Soundboard } from './soundboard-panel';
 import { Wizard } from './wizard';
@@ -50,13 +50,49 @@ function Wave({ level, live }: { level: number; live: boolean }) {
   return <div className="wave" aria-hidden="true">{shape.map((factor, i) => <i key={i} style={{ '--h': (live ? Math.max(3, 4 + level * 42 * factor) : 3) + 'px' } as React.CSSProperties} />)}</div>;
 }
 
+const mb = (bytes: number) => (bytes / 1048576).toFixed(bytes >= 104857600 ? 0 : 1) + ' MB';
+const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+function updateSummary(status: UpdateStatus, current: string, supported: boolean): string {
+  if (!supported) return 'MicMix ' + current + '. Updates apply to installed builds only.';
+  switch (status.phase) {
+    case 'checking': return 'Looking for a newer version…';
+    case 'available': return 'MicMix ' + status.version + ' found. Preparing download…';
+    case 'downloading': return 'Downloading MicMix ' + status.version + ' · ' + Math.round(status.percent) + '% of ' + mb(status.total);
+    case 'downloaded': return 'MicMix ' + status.version + ' is ready. It installs when you restart or go off air.';
+    case 'installing': return 'Installing MicMix ' + status.version + '…';
+    case 'upToDate': return 'MicMix ' + current + ' is up to date · checked ' + clock(status.at);
+    case 'error': return 'Update check failed: ' + status.message;
+    default: return 'MicMix ' + current + '. Checks run on launch and every few hours.';
+  }
+}
+function UpdateCard({ status, live, dismissed, dismiss }: { status: UpdateStatus; live: boolean; dismissed: string; dismiss(version: string): void }) {
+  const active = status.phase === 'available' || status.phase === 'downloading' || status.phase === 'downloaded' || status.phase === 'installing';
+  if (!active || dismissed === status.version) return null;
+  const percent = status.phase === 'downloading' ? status.percent : status.phase === 'available' ? 0 : 100;
+  const title = status.phase === 'available' ? 'Update found' : status.phase === 'downloading' ? 'Updating MicMix' : status.phase === 'downloaded' ? (live ? 'Update ready' : 'Restarting to finish') : 'Installing update';
+  const detail = status.phase === 'downloading' ? mb(status.transferred) + ' of ' + mb(status.total) + ' · ' + mb(status.bytesPerSecond) + '/s'
+    : status.phase === 'available' ? 'Preparing download…'
+    : status.phase === 'downloaded' ? (live ? 'Installs when you go off air, or restart now.' : 'MicMix will reopen in a moment.')
+    : 'Hang tight, this only takes a few seconds.';
+  return <div className={'update-card ' + status.phase} role="status" aria-live="polite">
+    <div className={'update-ring ' + (status.phase === 'downloaded' ? 'done' : '')} style={{ '--p': percent + '%' } as React.CSSProperties}>
+      <span>{status.phase === 'downloading' ? Math.round(percent) + '%' : status.phase === 'downloaded' ? <Icon name="check" size={18} /> : <i className="spinner" />}</span></div>
+    <div className="update-text"><b>{title} <span className="update-version">v{status.version}</span></b><small>{detail}</small>
+      <div className="update-bar"><i style={{ width: percent + '%' }} /></div></div>
+    {status.phase === 'downloaded' && live && <div className="update-actions">
+      <button className="btn primary small" onClick={() => void window.micmix.installUpdate().catch(() => {})}>Restart now</button>
+      <button className="btn small" onClick={() => dismiss(status.version)}>Later</button></div>}
+  </div>;
+}
 function App() {
   const [report, setReport] = useState<DeviceReport | null>(null);
   const [audio, setAudio] = useState(initialAudioState);
   const [meters, setMeters] = useState(emptyMeters);
   const [config, setConfig] = useState<(SetupConfig & { appVersion: string }) | null>(null);
   const [integrations, setIntegrations] = useState<IntegrationStatus>({ discord: false, fivem: false });
-  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [update, setUpdate] = useState<UpdateStatus>({ phase: 'idle' });
+  const [updatesSupported, setUpdatesSupported] = useState(false);
+  const [updateDismissed, setUpdateDismissed] = useState('');
   const [error, setError] = useState('');
   const [micId, setMicId] = useState('');
   const [monitorId, setMonitorId] = useState('');
@@ -76,6 +112,7 @@ function App() {
     const offMeters = window.micmix.onMeters(setMeters);
     const offUpdate = window.micmix.onUpdate(setUpdate);
     void window.micmix.getUpdate().then(setUpdate).catch(() => {});
+    void window.micmix.updatesSupported().then(setUpdatesSupported).catch(() => {});
     void window.micmix.getAudioState().then(value => { if (!receivedState) setAudio(value); }).catch(e => setError(String(e)));
     void window.micmix.getReport().then(value => { if (!receivedReport) setReport(value); }).catch(e => setError(String(e)));
     void window.micmix.getIntegrations().then(value => { if (!receivedIntegrations) setIntegrations(value); }).catch(() => {});
@@ -185,7 +222,6 @@ function App() {
             onClick={() => void send(audio.status === 'off' ? { type: 'start', deviceId: micId, monitorId } : { type: 'stop' })}>
             <Icon name={live ? 'stop' : audio.status === 'starting' ? 'close' : 'bolt'} size={16} />{live ? 'Go off air' : audio.status === 'starting' ? 'Cancel' : 'Go live'}</button>
         </div>
-        {update && <button className="btn update" title={'MicMix ' + update.version + ' is available. Opens the download page.'} onClick={() => void window.micmix.openReleases()}><Icon name="bolt" size={16} />Update to v{update.version}</button>}
         <button className="btn icon gear" aria-label="Settings" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(!settingsOpen)}><Icon name="gear" size={22} /></button>
       </div>
     </header>
@@ -259,6 +295,7 @@ function App() {
         <span className="chip"><Icon name="headphones" size={14} />{s.monitor ? 'Monitor: ' + (s.monitorMic ? 'music + mic' : 'music only') : 'Monitor off'}</span>
       </div>
     </section>
+    <UpdateCard status={update} live={live} dismissed={updateDismissed} dismiss={setUpdateDismissed} />
     {settingsOpen && <div className="sheet-backdrop" onClick={e => { if (e.target === e.currentTarget) setSettingsOpen(false); }}>
       <section className="card sheet settings" role="dialog" aria-modal="true" aria-label="Settings">
         <div className="sheet-head"><h2>Settings</h2><button className="btn icon" aria-label="Close settings" onClick={() => setSettingsOpen(false)}><Icon name="close" /></button></div>
@@ -285,8 +322,11 @@ function App() {
             <div className="row"><div className="row-label"><span>Test tone</span><small>1.5 s at 440 Hz into the virtual mic</small></div>
               <button className="btn" disabled={!live || audio.tone || busy} onClick={() => void send({ type: 'tone' })}>{audio.tone ? 'Sending tone…' : 'Send test tone'}</button></div>
             <div className="row"><div className="row-label"><span>Rescan devices</span></div><button className="btn" onClick={() => void window.micmix.refreshDevices().catch(e => setError(String(e)))}><Icon name="refresh" size={16} />Rescan</button></div>
-            <div className="row"><div className="row-label"><span>Check for updates</span><small>Asks GitHub for the newest release on launch and shows a link. Nothing is installed automatically.</small></div>
-              <Switch checked={config?.updateCheck ?? true} onChange={enabled => { if (config) setConfig({ ...config, updateCheck: enabled }); void window.micmix.setUpdateCheck(enabled).catch(e => setError(String(e))); }} label="Check for updates" /></div>
+            <div className="row"><div className="row-label"><span>Updates</span><small>{updateSummary(update, config?.appVersion ?? '', updatesSupported)}</small></div>
+              {update.phase === 'downloaded' ? <button className="btn primary" onClick={() => void window.micmix.installUpdate().catch(e => setError(String(e)))}><Icon name="refresh" size={16} />Restart to update</button>
+              : <button className="btn" disabled={!updatesSupported || update.phase === 'checking' || update.phase === 'downloading' || update.phase === 'installing'} onClick={() => void window.micmix.checkForUpdates().catch(e => setError(String(e)))}><Icon name="refresh" size={16} />{update.phase === 'checking' ? 'Checking…' : 'Check now'}</button>}</div>
+            <div className="row"><div className="row-label"><span>Update automatically</span><small>Check on launch and every few hours; install while off air.</small></div>
+              <Switch checked={config?.updateCheck ?? true} onChange={enabled => { if (config) setConfig({ ...config, updateCheck: enabled }); void window.micmix.setUpdateCheck(enabled).catch(e => setError(String(e))); }} label="Update automatically" /></div>
             <div className="row"><div className="row-label"><span>Setup assistant</span><small>Settings, devices, queue and pads are saved automatically.</small></div>
               <button className="btn" onClick={() => { setSettingsOpen(false); setWizard(true); }}>Run setup again</button></div>
           </div>
@@ -301,8 +341,7 @@ function App() {
             <div className="row"><img className="about-art" src="./brand/micmix-primary-1024.png" alt="MicMix logo" width={96} height={96} /><p>One microphone for your voice plus music, YouTube and a soundboard, routed into Discord, FiveM and any app through the MicMix Virtual Mic.</p>
               <p>The virtual microphone is <strong>VB-CABLE</strong> by <strong>VB-Audio Software</strong>, included as donationware. If MicMix is useful, please support its author.</p>
               <div className="actions"><button className="btn primary" onClick={() => void window.micmix.openDonation()}><Icon name="heart" size={16} />Donate to VB-Audio</button>
-                <button className="btn" onClick={() => void window.micmix.openVbCableSite()}>vb-audio.com/Cable</button>
-                <button className="btn" onClick={() => void window.micmix.openReleases()}>{update ? 'Get MicMix ' + update.version : 'Releases on GitHub'}</button></div></div>
+                <button className="btn" onClick={() => void window.micmix.openVbCableSite()}>vb-audio.com/Cable</button></div></div>
           </div>
         </div>
       </section>

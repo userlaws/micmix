@@ -112,8 +112,41 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .air { padding: 11px 18px; font-size: 14px; font-weight: 600; border-radius: 12px; }
 .air.live { background: rgba(255, 255, 255, 0.1); border-color: var(--line-2); }
 .gear { width: 46px; height: 46px; border-radius: 14px; }
-.btn.update { background: rgba(48, 209, 88, 0.16); border-color: rgba(48, 209, 88, 0.45); color: #7df0a0; font-weight: 600; }
-.btn.update:hover:not(:disabled) { background: rgba(48, 209, 88, 0.26); }
+/* In-app update card */
+.update-card {
+  position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 60; width: min(520px, calc(100vw - 40px));
+  display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 16px; padding: 14px 18px 14px 14px;
+  border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(10, 18, 40, 0.86);
+  backdrop-filter: blur(24px) saturate(150%); -webkit-backdrop-filter: blur(24px) saturate(150%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: update-in 420ms cubic-bezier(.2, .9, .2, 1);
+}
+.update-card::before { content: ''; position: absolute; inset: -1px; border-radius: 21px; padding: 1px; pointer-events: none;
+  background: linear-gradient(120deg, var(--sky), var(--blue), var(--violet), var(--pink), var(--sky)); background-size: 300% 100%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  opacity: 0.7; animation: update-border 4s linear infinite; }
+@keyframes update-in { from { opacity: 0; transform: translate(-50%, 24px) scale(0.96); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+@keyframes update-border { to { background-position: 300% 0; } }
+.update-ring { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; position: relative;
+  background: conic-gradient(var(--sky) 0, var(--violet) calc(var(--p, 0%) * 0.6), var(--pink) var(--p, 0%), rgba(255, 255, 255, 0.1) var(--p, 0%));
+  transition: --p 120ms linear; }
+.update-ring::after { content: ''; position: absolute; inset: 5px; border-radius: 50%; background: #0c1530; }
+.update-ring span { position: relative; z-index: 1; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); display: grid; place-items: center; }
+.update-ring.done { background: conic-gradient(var(--green) 0 100%); }
+.update-ring.done span { color: var(--green); }
+.spinner { display: block; width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid rgba(255, 255, 255, 0.18); border-top-color: var(--sky); animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.update-text { min-width: 0; }
+.update-text b { display: block; font-size: 15px; font-weight: 700; letter-spacing: -0.2px; }
+.update-version { font-weight: 600; color: var(--text-2); font-size: 13px; margin-left: 2px; }
+.update-text small { display: block; margin-top: 2px; font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.update-bar { position: relative; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.1); margin-top: 10px; overflow: hidden; }
+.update-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--sky), var(--blue), var(--violet), var(--pink)); transition: width 160ms ease-out; position: relative; }
+.update-bar i::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.45) 50%, transparent 100%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.update-card.downloaded .update-bar i, .update-card.installing .update-bar i { background: linear-gradient(90deg, var(--teal), var(--green)); }
+.update-actions { display: flex; flex-direction: column; gap: 6px; }
+.update-card:not(.downloaded) .update-actions { display: none; }
 
 /* Device row */
 .devices { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; padding: 14px 16px; }

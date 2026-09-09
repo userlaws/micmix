@@ -116,7 +116,7 @@ please **donate to VB-Audio** — it's what keeps the virtual cable free.
 Everything ships from GitHub (`userlaws/micmix`):
 
 1. **Ship a new version.** Run `npm version patch` (or `minor` / `major`), then `git push --follow-tags`. The tag triggers `.github/workflows/release.yml`, which fetches the standard VB-CABLE pack, builds `MicMix-Setup.exe` on a Windows runner and publishes a GitHub Release with generated notes.
-2. **Users get it.** The website's download button always points at `releases/latest/download/MicMix-Setup.exe`, and installed copies check the releases API on launch (at most every six hours) and show an "Update to vX.Y.Z" button that opens the release page. MicMix never downloads or installs updates by itself; the check can be turned off in Settings.
+2. **Users get it.** The website's download button always points at `releases/latest/download/MicMix-Setup.exe`. Installed copies check for a new release a few seconds after launch (and every six hours), download it in the background with a progress card, and restart into it automatically while off air; during a live session MicMix offers "Restart now" or finishes the update on quit. Settings > Diagnostics has a manual "Check now" and an "Update automatically" switch. Windows shows one UAC prompt per update because MicMix installs per machine.
 3. **Website.** Any push to `main` that touches `site/` deploys it to GitHub Pages through `.github/workflows/site.yml`.
 4. **CI.** `.github/workflows/ci.yml` type-checks and bundles the app and the site on every push and pull request.
 

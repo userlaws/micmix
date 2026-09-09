@@ -9,8 +9,7 @@ import { validCommand } from './commands';
 import { validAccelerator } from './hotkeys';
 import { loadConfig, saveConfig } from './config';
 import { integrationStatus } from './processes';
-import { checkForUpdate, releasesUrl } from './updates';
-import type { UpdateInfo } from './shared';
+import { checkForUpdates, installUpdate, updateStatus, onUpdateStatus, updatesSupported } from './updates';
 import { youtubeId } from './youtube-url';
 import { YouTubeView } from './youtube-view';
 
@@ -59,7 +58,9 @@ function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(flushC
 let commandId = 0;
 const pending = new Map<number, { resolve(): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
 function publishAudio(state: AudioState) {
+  const wasLive = audioState.status !== 'off';
   audioState = state;
+  if (wasLive && state.status === 'off') maybeAutoInstall();
   if (restored) { config.settings = state.settings; scheduleSave(); }
   if (ui && !ui.isDestroyed()) ui.webContents.send('audio:state', state);
 }
@@ -153,20 +154,24 @@ function protect(win: BrowserWindow) {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', event => event.preventDefault());
 }
-// Update notice: one request to GitHub's releases API, then a link in the UI. Nothing is downloaded.
-let update: UpdateInfo | null = null;
+// In-app updates: checked shortly after launch and every 6 hours while running. A downloaded update
+// installs itself (restarting MicMix) only while OFF AIR and after setup, so a live session is never cut.
+// While LIVE the UI offers "Restart to update" instead; an unfinished update also installs on quit.
 let updateTimer: NodeJS.Timeout | null = null;
-function publishUpdate() { if (ui && !ui.isDestroyed()) ui.webContents.send('update:status', update); }
-async function runUpdateCheck() {
-  try { update = await checkForUpdate(); } catch { update = null; }
-  publishUpdate();
+let installTimer: NodeJS.Timeout | null = null;
+function publishUpdate() { if (ui && !ui.isDestroyed()) ui.webContents.send('update:status', updateStatus()); }
+function maybeAutoInstall() {
+  if (installTimer) { clearTimeout(installTimer); installTimer = null; }
+  if (updateStatus().phase !== 'downloaded') return;
+  if (audioState.status !== 'off' || !config.setupDone) return;
+  installTimer = setTimeout(() => { if (audioState.status === 'off') installUpdate(); }, 1800);
 }
+onUpdateStatus(() => { publishUpdate(); maybeAutoInstall(); });
 function scheduleUpdateCheck() {
   if (updateTimer) { clearTimeout(updateTimer); updateTimer = null; }
-  // Only packaged builds phone GitHub, so development runs and smoke checks stay offline.
-  if (!config.updateCheck || !(app.isPackaged || process.env.MICMIX_UPDATE_CHECK === '1')) return;
-  const tick = () => { void runUpdateCheck(); updateTimer = setTimeout(tick, 6 * 60 * 60 * 1000); };
-  updateTimer = setTimeout(tick, 8000);
+  if (!config.updateCheck || !updatesSupported) return;
+  const tick = () => { void checkForUpdates(); updateTimer = setTimeout(tick, 6 * 60 * 60 * 1000); };
+  updateTimer = setTimeout(tick, 3000);
 }
 app.whenReady().then(async () => {
   config = loadConfig(configPath());
@@ -268,17 +273,13 @@ app.whenReady().then(async () => {
     config.setupDone = true; flushConfig();
   });
   ipcMain.handle('integrations:get', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return integrations; });
-  ipcMain.handle('update:get', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return update; });
-  ipcMain.handle('update:open', event => {
-    if (!fromUi(event)) throw new Error('Unauthorized');
-    const url = update?.url ?? releasesUrl;
-    if (!url) throw new Error('No release page configured.');
-    return shell.openExternal(url);
-  });
+  ipcMain.handle('update:get', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return updateStatus(); });
+  ipcMain.handle('update:supported', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return updatesSupported; });
+  ipcMain.handle('update:check', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return checkForUpdates(); });
+  ipcMain.handle('update:install', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return installUpdate(); });
   ipcMain.handle('config:update-check', (event, enabled: boolean) => {
     if (!fromUi(event)) throw new Error('Unauthorized');
     config.updateCheck = enabled === true; scheduleSave();
-    if (!config.updateCheck) { update = null; publishUpdate(); }
     scheduleUpdateCheck();
   });
   ipcMain.handle('open:vbcable', event => {
