@@ -60,7 +60,7 @@ let commandId = 0;
 const pending = new Map<number, { resolve(): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
 function publishAudio(state: AudioState) {
   audioState = state;
-  if (restored) { config.settings = state.settings; config.queue = state.queue; scheduleSave(); }
+  if (restored) { config.settings = state.settings; scheduleSave(); }
   if (ui && !ui.isDestroyed()) ui.webContents.send('audio:state', state);
 }
 function cancelPending(reason: string) {
@@ -119,18 +119,9 @@ async function restore() {
   }
   pads = restoredPads; config.pads = pads; syncHotkeys();
   if (pads.some(Boolean)) await runCommand({ type: 'pads', pads }).catch(error => console.error(error));
-  const tracks: LocalTrack[] = [];
-  for (const saved of config.queue) {
-    if (saved.youtubeId) {
-      const track: LocalTrack = { id: randomUUID(), title: saved.title, url: saved.url, youtubeId: saved.youtubeId };
-      localFiles.set(track.id, track); tracks.push(track);
-    } else {
-      try { tracks.push((await registerFiles([fileURLToPath(saved.url)]))[0]); } catch { /* Missing file is dropped from the queue. */ }
-    }
-  }
-  if (tracks.length) await runCommand({ type: 'enqueue', tracks }).catch(error => console.error(error));
+  // The queue is deliberately NOT restored: every launch starts with an empty Music panel (user request).
   restored = true;
-  config.queue = audioState.queue; scheduleSave();
+  config.queue = []; scheduleSave();
 }
 
 let integrations: IntegrationStatus = { discord: false, fivem: false };

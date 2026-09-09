@@ -10,7 +10,7 @@ module.exports = async function smoke(ui, worker, root) {
   await sleep(500);
   const wizardShown = await evalUi(`!!document.querySelector('.wizard')`);
   const micLabel = await evalUi(`document.querySelector('#microphone').selectedOptions[0].textContent`);
-  const state = await evalUi(`(async () => { for (let i = 0; i < 100; i++) { const s = await window.micmix.getAudioState(); if (s.pads[0]?.ready && s.queue.length) return s; await new Promise(r => setTimeout(r, 100)); } return window.micmix.getAudioState(); })()`);
+  const state = await evalUi(`(async () => { for (let i = 0; i < 100; i++) { const s = await window.micmix.getAudioState(); if (s.pads[0]?.ready) return s; await new Promise(r => setTimeout(r, 100)); } return window.micmix.getAudioState(); })()`);
   const report = { wizardShown, micLabel, musicLevel: state.settings.levels.music, pad0: state.pads[0] && { title: state.pads[0].title, hotkey: state.pads[0].hotkey, ready: state.pads[0].ready, error: state.pads[0].error },
     hotkeyRegistered: globalShortcut.isRegistered('Ctrl+Shift+F9'), queue: state.queue.map(t => t.title), status: state.status };
   await writeFile(path.join(root, 'artifacts', 'phase4-restart.json'), JSON.stringify(report, null, 2));
@@ -19,7 +19,7 @@ module.exports = async function smoke(ui, worker, root) {
   assert.equal(report.musicLevel, 0.42, 'fader position restored');
   assert.equal(report.pad0?.ready, true, 'pad clip restored and decoded');
   assert.equal(report.pad0?.hotkey, 'Ctrl+Shift+F9'); assert.equal(report.hotkeyRegistered, true, 'hotkey re-registered after restart');
-  assert.deepEqual(report.queue, ['restore-song.wav'], 'queue restored');
+  assert.deepEqual(report.queue, [], 'queue starts empty on every launch');
   assert.equal(report.status, 'off', 'restart must come up OFF AIR');
   console.log('Phase 4 restart checks passed:', JSON.stringify(report));
 };

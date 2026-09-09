@@ -87,7 +87,7 @@ module.exports = async function smoke(ui, worker, root, registerFiles, youtube, 
   await evalUi(`window.micmix.getAudioState().then(s => window.micmix.command({ type: 'settings', settings: { ...s.settings, levels: { ...s.settings.levels, music: 0.42 } } }))`);
   await sleep(700); helpers.flushConfig();
   const saved = JSON.parse(await readFile(helpers.configPath(), 'utf8'));
-  assert.equal(saved.settings.levels.music, 0.42); assert.equal(saved.pads[0].hotkey, 'Ctrl+Shift+F9'); assert.equal(saved.queue.length, 1);
+  assert.equal(saved.settings.levels.music, 0.42); assert.equal(saved.pads[0].hotkey, 'Ctrl+Shift+F9'); assert.equal(saved.queue.length, 0, 'queue is never persisted');
   await writeFile(path.join(root, 'artifacts', 'phase4-ui.png'), (await ui.webContents.capturePage()).toPNG());
   globalShortcut.unregisterAll(); // the restarted process must be able to claim the hotkey
   const restart = await new Promise(resolve => {
