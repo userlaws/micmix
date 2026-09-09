@@ -144,7 +144,7 @@ function App() {
   return <main onDragOver={e => { e.preventDefault(); }} onDrop={e => { e.preventDefault(); }}>
     {wizard && <Wizard cable={cable} reportError={report?.error ?? null} microphones={microphones} playbacks={playbacks}
       micId={micId} monitorId={monitorId} setMicId={setMicId} setMonitorId={setMonitorId} audio={audio} busy={busy} send={send} finish={finishWizard} />}
-    <header><div><span className="eyebrow">YOUR SOUND. ONE MICROPHONE.</span><h1>MicMix <span className="phase">PHASE 4</span></h1></div>
+    <header><div><span className="eyebrow">YOUR SOUND. ONE MICROPHONE.</span><h1>MicMix <span className="phase">{config?.appVersion ? 'v' + config.appVersion : ''}</span></h1></div>
       <div className="header-actions"><button className={'air ' + (live ? 'live' : '')}
         disabled={audio.status === 'off' && (busy || !micId || !cable || !report?.setSinkIdSupported || (audio.settings.monitor && !monitorId))}
         onClick={() => void send(audio.status === 'off' ? { type: 'start', deviceId: micId, monitorId } : { type: 'stop' })}>
@@ -214,7 +214,7 @@ function App() {
       <span className={integrations.discord ? 'accent' : ''}>{integrations.discord ? '● Discord running · Input Device → CABLE Output' : '○ Discord not detected'}</span>
       <span className={integrations.fivem ? 'accent' : ''}>{integrations.fivem ? '● FiveM running · Voice Chat → CABLE Output' : '○ FiveM not detected'}</span>
       <span>{audio.settings.monitor ? 'Monitor: ' + (audio.settings.monitorMic ? 'music + mic' : 'music only') : 'Monitor off'}</span></footer>
-    <p className="checkpoint">Phase 4 checkpoint: close MicMix, delete <strong>%APPDATA%\MicMix\config.json</strong>, relaunch. The setup wizard should run once; afterwards your mic, headphones, faders, queue and pads should survive a restart, and pad hotkeys should fire from any app while LIVE.</p>
+    <p className="checkpoint">Tip: set Discord/FiveM <strong>Input Device</strong> to <strong>CABLE Output</strong>, keep Discord noise suppression off, and turn MicMix monitoring off during Discord's mic test. Your devices, faders, queue and pads are saved automatically.</p>
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<App />);
