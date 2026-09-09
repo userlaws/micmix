@@ -39,6 +39,7 @@
 ## Current state
 - Phase 0 PASSED: user supplied Electron log with CABLE Input and CABLE Output and authorized Phase 1.
 - Phase 1 implemented; STOP at Discord auditory checkpoint. No audible result is confirmed.
+- Phase 1 startup fix: user reported no visible window. Reproduced with ui.isVisible() false; changing launcher windowsHide from true to false made visibility assertion pass. Earlier capturePage screenshot did not prove visibility. Added visible/non-minimized UI and hidden-worker regression assertions, explicit show/focus after UI load and on second launch.
 - Hidden audio worker owns exact-device mic capture with all three processing flags false, interactive AudioContext, explicit setSinkId to CABLE Input, master gain, and 440 Hz / 1.5-second / -20 dBFS peak test tone.
 - OFF AIR cancels pending starts, releases tracks, and closes context. Device loss, context interruption, and sink changes stop output. No monitor, mixer, limiter, or meters until Phase 2.
 - Windows default recording device is now CABLE Output. The selector excludes cable and default aliases, so user must select their Yeti (or another physical mic). Explicit real default is auto-selected only when its group matches a non-cable device.

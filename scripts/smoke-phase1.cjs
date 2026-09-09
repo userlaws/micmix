@@ -4,6 +4,9 @@ const path = require('node:path');
 
 // Silent integration checks only. Never starts mic passthrough or an oscillator.
 module.exports = async function smoke(ui, worker, root) {
+  assert.equal(ui.isVisible(), true, 'Main MicMix window must be visible');
+  assert.equal(ui.isMinimized(), false, 'Main MicMix window must not be minimized');
+  assert.equal(worker.isVisible(), false, 'Audio worker must stay hidden');
   const result = await ui.webContents.executeJavaScript(`(async () => {
     const before = await window.micmix.getAudioState();
     await window.micmix.command({ type: 'stop' });
@@ -41,7 +44,7 @@ module.exports = async function smoke(ui, worker, root) {
   await mkdir(path.join(root, 'artifacts'), { recursive: true });
   await writeFile(path.join(root, 'artifacts', 'phase1-ui.png'), (await ui.webContents.capturePage()).toPNG());
   await writeFile(path.join(root, 'artifacts', 'phase1-smoke.json'), JSON.stringify({
-    checks: 'OFF AIR startup, stop IPC, off-air tone rejection, cable/default mic rejection, malformed command rejection, physical mic options, real silent setSinkId',
+    checks: 'UI visible and not minimized, audio worker hidden, OFF AIR startup, stop IPC, off-air tone rejection, cable/default mic rejection, malformed command rejection, physical mic options, real silent setSinkId',
     sink, audibleTests: 'NOT RUN — user checkpoint required'
   }, null, 2));
   console.log('Silent Phase 1 checks passed. Audible passthrough/tone tests NOT RUN.');

@@ -83,7 +83,7 @@ app.whenReady().then(async () => {
   ipcMain.on('audio:state', (event, state: AudioState) => {
     if (isWorker(event.sender) && event.senderFrame?.url === audioUrl) publishAudio(state);
   });
-  app.on('second-instance', () => { if (ui) { if (ui.isMinimized()) ui.restore(); ui.focus(); } });
+  app.on('second-instance', () => { if (ui) { if (ui.isMinimized()) ui.restore(); ui.show(); ui.focus(); } });
 
   ipcMain.handle('devices:get', event => {
     if (event.sender !== ui?.webContents || event.senderFrame?.url !== uiUrl) throw new Error('Unauthorized');
@@ -136,6 +136,8 @@ app.whenReady().then(async () => {
     });
     ui.on('closed', () => { ui = null; app.quit(); });
     await ui.loadFile(path.join(__dirname, 'index.html'));
+    ui.show();
+    ui.focus();
   }
   timeout = setTimeout(() => {
     if (latest) return;
