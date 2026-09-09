@@ -18,6 +18,8 @@ export type UpdateStatus =
   | { phase: 'error'; message: string; at: number };
 export interface SavedConfig extends SetupConfig { version: 1; settings: MixerSettings; queue: LocalTrack[]; pads: (SoundPad | null)[] }
 export interface MicMixBridge {
+  searchYouTube(query: string): Promise<YouTubeResult[] | null>;
+  cancelYouTubeSearch(): Promise<void>;
   youtubeTrack(input: string): Promise<LocalTrack | null>;
   videoBounds(bounds: VideoBounds | null): void;
   pickFiles(): Promise<LocalTrack[]>;
@@ -81,6 +83,10 @@ export interface AudioState {
   pads: (PadState | null)[]; activePads: number[];
 }
 export interface LocalTrack { id: string; title: string; url: string; youtubeId?: string }
+export interface YouTubeResult {
+  videoId: string; title: string; channel: string; duration: string;
+  views: string; published: string; live: boolean; thumbnail: string;
+}
 export interface VideoBounds { x: number; y: number; width: number; height: number }
 export type YouTubeCommand = { type: 'load'; videoId: string; position: number } | { type: 'play' } | { type: 'pause' } | { type: 'seek'; seconds: number };
 export interface YouTubeUpdate { videoId: string; ready?: boolean; playerState?: number; position?: number; duration?: number; title?: string; error?: string }

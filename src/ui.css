@@ -1,4 +1,4 @@
-/* MicMix — frosted, Apple-inspired dark UI. No external assets: the CSP allows only same-origin. */
+/* MicMix — frosted, Apple-inspired dark UI. Remote images are limited to YouTube thumbnails. */
 :root {
   color-scheme: dark;
   --bg: #071126;
@@ -276,6 +276,67 @@ input[type=range].thin::-webkit-slider-thumb { width: 14px; height: 14px; margin
 .queue button:disabled { opacity: 0.4; }
 .empty { text-align: center; font-size: 12px; color: var(--text-3); padding: 6px 0 0; }
 .dragging { border-color: rgba(20, 120, 255, 0.7); box-shadow: 0 0 0 4px rgba(20, 120, 255, 0.18), var(--shadow); }
+
+/* YouTube search lives in the Music card, sharing its typography and controls. */
+.youtube-browser { min-width: 0; }
+.search-clear { display: grid; place-items: center; flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--text-2); }
+.search-clear:hover { color: var(--text); background: var(--glass-2); }
+.search-results { overflow: hidden; border: 1px solid rgba(128, 143, 191, 0.18); border-radius: 15px; background: rgba(6, 12, 27, 0.62); margin-bottom: 14px; }
+.search-results-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 17px 16px 12px; background: linear-gradient(115deg, rgba(86, 73, 155, 0.16), transparent); }
+.search-heading { min-width: 0; }
+.search-source { display: flex; align-items: center; gap: 7px; color: #adb4cc; font-size: 9px; letter-spacing: 1.5px; font-weight: 650; }
+.search-source .icon { color: #ff808d; }
+.search-heading h3 { margin: 5px 0 0; font-size: 21px; font-weight: 650; letter-spacing: -0.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-done { flex: none; }
+.search-results-meta { display: flex; justify-content: space-between; gap: 8px; color: #929db5; font-size: 11px; padding: 0 16px 12px; border-bottom: 1px solid var(--line); }
+.search-result-list { list-style: none; padding: 6px; margin: 0; max-height: 420px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.search-result { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 8px; border-radius: 10px; }
+.search-result + .search-result { border-top: 1px solid rgba(255, 255, 255, 0.045); }
+.search-result:hover, .search-result:focus-within { background: rgba(130, 146, 199, 0.08); }
+.result-thumbnail { position: relative; width: 112px; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 7px; background: #232e49; display: grid; place-items: center; color: #7d8aab; }
+.result-thumbnail img { width: 100%; height: 100%; object-fit: cover; }
+.result-duration { position: absolute; bottom: 4px; right: 4px; border-radius: 4px; padding: 1px 4px; color: #fff; background: rgba(0, 0, 0, 0.86); font-size: 10px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.result-duration.is-live { background: #ba253e; font-size: 9px; letter-spacing: 0.7px; }
+.result-info { min-width: 0; }
+.result-info h4 { color: #edf0fa; font-size: 13px; font-weight: 600; line-height: 1.4; margin: 0 0 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.result-channel { color: #a6b1cb; font-size: 11px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-stats { color: #8794b0; font-size: 10px; margin: 2px 0 0; line-height: 1.4; }
+.result-add { display: flex; align-items: center; justify-content: center; gap: 4px; align-self: center; min-width: 58px; min-height: 32px; padding: 6px 8px; border: 1px solid rgba(132, 151, 246, 0.26); border-radius: 8px; background: rgba(100, 124, 220, 0.13); color: #c4d1ff; font-size: 11px; font-weight: 600; }
+.result-add:hover:not(:disabled) { background: rgba(100, 124, 220, 0.28); border-color: rgba(148, 167, 255, 0.5); color: #fff; }
+.result-add:disabled { opacity: 0.45; cursor: default; }
+.result-add.is-added:disabled { opacity: 1; color: #69d8b1; border-color: transparent; background: rgba(45, 212, 191, 0.07); }
+.search-footer { margin: 0; padding: 11px 16px; border-top: 1px solid var(--line); color: #9eabc7; font-size: 11px; line-height: 1.5; }
+.search-loading > p { margin: 0; padding: 0 16px; font-size: 12px; color: var(--text-2); }
+.search-skeletons { padding: 6px 14px; }
+.search-skeleton { display: flex; gap: 12px; padding: 12px 0; }
+.search-skeleton > i { width: 112px; height: 63px; flex: none; border-radius: 7px; }
+.search-skeleton > div { flex: 1; padding-top: 7px; }
+.search-skeleton i { display: block; background: rgba(140, 155, 204, 0.10); }
+.search-skeleton > div i { height: 10px; width: 90%; border-radius: 4px; margin-bottom: 12px; }
+.search-skeleton > div i + i { width: 55%; }
+.search-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 30px 22px; color: #93a3c8; }
+.search-empty h4 { margin: 0; font-size: 16px; font-weight: 600; color: var(--text); }
+.search-empty p { margin: 0; font-size: 12px; max-width: 320px; }
+.search-error { font-size: 12px; color: #ffafa7; background: rgba(255, 69, 58, 0.08); border: 1px solid rgba(255, 69, 58, 0.22); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; overflow-wrap: anywhere; }
+.player.browsing .now { min-height: 0; gap: 10px; }
+.player.browsing .art { width: 44px; height: 44px; border-radius: 9px; box-shadow: none; }
+.player.browsing .art .icon { width: 22px; height: 22px; }
+.player.browsing .now-body h3 { font-size: 13px; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.player.browsing .now-body .eyebrow { font-size: 9px; margin-bottom: 2px; }
+.player.browsing .now-body p { font-size: 11px; margin-top: 2px; }
+.player.browsing .now-body small { display: none; }
+.player.browsing .play { width: 38px; height: 38px; box-shadow: none; }
+.player.browsing .play .icon { width: 20px; height: 20px; }
+.card.music { container-type: inline-size; }
+@container (max-width: 410px) {
+  .search-result { grid-template-columns: 88px minmax(0, 1fr) auto; gap: 9px; padding: 10px 4px; }
+  .result-thumbnail { width: 88px; }
+  .result-add { min-width: 30px; width: 30px; padding: 6px; }
+  .result-add span { display: none; }
+  .result-info h4 { font-size: 12px; }
+  .result-stats { font-size: 9px; }
+  .search-results-meta { font-size: 10px; }
+}
 
 /* Soundboard */
 .pads { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }

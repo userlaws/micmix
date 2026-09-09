@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { initialAudioState, emptyMeters, cablePresent, type DeviceReport, type AudioCommand, type MixerSettings, type Channel, type SetupConfig, type IntegrationStatus, type Meters, type UpdateStatus } from './shared';
 import { microphoneChoices, playbackChoices } from './devices';
 import { Soundboard } from './soundboard-panel';
+import { YouTubePanel } from './youtube-panel';
 import { Wizard } from './wizard';
 import { Icon } from './icons';
 import { Level, Switch, DeviceSelect } from './controls';
@@ -99,7 +100,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [browsingYouTube, setBrowsingYouTube] = useState(false);
   const [source, setSource] = useState<'youtube' | 'local'>('youtube');
   const [wizard, setWizard] = useState(false);
   const wizardDecided = useRef(false);
@@ -167,16 +168,15 @@ function App() {
     } catch (e) { setError(String(e)); }
     finally { setBusy(false); }
   }
-  async function addYouTube() {
+  async function addYouTube(value: string, select: boolean) {
     setError(''); setBusy(true);
     try {
-      const track = await window.micmix.youtubeTrack(youtubeUrl);
+      const track = await window.micmix.youtubeTrack(value);
       if (!track) return;
       const before = await window.micmix.getAudioState();
       await window.micmix.command({ type: 'enqueue', tracks: [track] });
-      if (before.queue.length) await window.micmix.command({ type: 'select', index: before.queue.length });
-      setYoutubeUrl('');
-    } catch (e) { setError(String(e)); }
+      if (select && before.queue.length) await window.micmix.command({ type: 'select', index: before.queue.length });
+    }
     finally { setBusy(false); }
   }
   function finishWizard() {
@@ -203,11 +203,10 @@ function App() {
     window.addEventListener('resize', update); window.addEventListener('scroll', update, true);
     update();
     return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener('resize', update); window.removeEventListener('scroll', update, true); window.micmix.videoBounds(null); };
-  }, [current?.youtubeId, current?.title, overlay, error, audio.error, source, audio.queue.length]);
+  }, [current?.youtubeId, current?.title, overlay, error, audio.error, source, audio.queue.length, browsingYouTube]);
   const canGoLive = !(busy || !micId || !cable || !report?.setSinkIdSupported || (audio.settings.monitor && !monitorId));
   const problem = error || audio.error || report?.error;
   const s = audio.settings;
-  const youtubeLooksLikeLink = /^(?:https?:\/\/|(?:(?:www|m|music)\.)?youtube\.com\/|youtu\.be\/)/i.test(youtubeUrl.trim());
   return <main onDragOver={e => { e.preventDefault(); }} onDrop={e => { e.preventDefault(); }}>
     <div className="titlebar">MicMix</div>
     {wizard && <Wizard cable={cable} reportError={report?.error ?? null} microphones={microphones} playbacks={playbacks}
@@ -246,20 +245,17 @@ function App() {
             <button role="tab" aria-selected={source === 'youtube'} className={source === 'youtube' ? 'on' : ''} onClick={() => setSource('youtube')}><Icon name="youtube" size={16} />YouTube</button>
             <button role="tab" aria-selected={source === 'local'} className={source === 'local' ? 'on' : ''} onClick={() => setSource('local')}><Icon name="file" size={16} />Local file</button>
           </div></div>
-        {source === 'youtube' ? <form className="source-row" onSubmit={e => { e.preventDefault(); void addYouTube(); }}>
-          <div className="input-wrap"><Icon name="youtube" size={18} /><input aria-label="Search YouTube or paste a video link" type="text" required maxLength={2048} placeholder="Search YouTube or paste a video link…" value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} /></div>
-          <button className="btn primary" disabled={busy || !youtubeUrl.trim()} type="submit">{youtubeLooksLikeLink ? 'Load' : 'Search'}</button>
-        </form> : <div className="source-row">
+        {source === 'youtube' ? <YouTubePanel busy={busy} queue={audio.queue} onAdd={addYouTube} onBrowse={setBrowsingYouTube} /> : <div className="source-row">
           <div className="drop-hint"><Icon name="file" size={18} />Drop MP3, WAV, FLAC or OGG files anywhere on this card</div>
           <button className="btn primary" disabled={busy} onClick={() => void addFiles()}><Icon name="plus" size={16} />Add files</button>
         </div>}
-        <div className="player">
-          {current?.youtubeId ? <><div className="youtube-slot" ref={videoSlot}><span>Loading YouTube player…</span></div>
+        {(!browsingYouTube || current) && <div className={'player' + (browsingYouTube ? ' browsing' : '')}>
+          {current?.youtubeId && !browsingYouTube ? <><div className="youtube-slot" ref={videoSlot}><span>Loading YouTube player…</span></div>
             <h3 className="youtube-title">{current.title}{audio.buffering && <span className="muted"> · Buffering…</span>}</h3></> :
           <div className="now"><div className={'art ' + (current ? '' : 'idle')}><Icon name="music" size={48} /></div>
             <div className="now-body"><span className="eyebrow">{audio.playing ? 'Now playing' : current ? 'Ready to play' : 'Music sources'}</span>
               <h3>{current?.title ?? 'Bring your music'}</h3>
-              <p>{current ? 'Local file · ' + (audio.index + 1) + ' of ' + audio.queue.length : 'Search YouTube, paste a link, or add local files'}</p>
+              <p>{current ? (current.youtubeId ? 'YouTube' : 'Local file') + ' · ' + (audio.index + 1) + ' of ' + audio.queue.length : 'Search YouTube, paste a link, or add local files'}</p>
               {!live && <small>Go live to play. Off air pauses and silences all audio.</small>}</div></div>}
           <div className="seek"><input className="thin" aria-label="Seek music" type="range" min="0" max={audio.duration || 1} step="0.1" value={Math.min(audio.position, audio.duration || 1)}
             style={pct(audio.duration ? Math.min(1, audio.position / audio.duration) : 0)}
@@ -270,7 +266,7 @@ function App() {
             <button className="play" aria-label={audio.playing ? 'Pause' : 'Play'} disabled={!live || !current || busy} onClick={() => void send({ type: audio.playing ? 'pause' : 'play' })}><Icon name={audio.playing ? 'pause' : 'play'} size={30} /></button>
             <button className="btn icon" aria-label="Next track" disabled={!current || audio.index + 1 >= audio.queue.length || busy} onClick={() => void send({ type: 'next' })}><Icon name="next" size={22} /></button>
           </div>
-        </div>
+        </div>}
         <div className="queue-head"><h2>Up next <span className="count">{audio.queue.length}</span></h2>
           <button className="btn small" disabled={!audio.queue.length || busy} onClick={() => void send({ type: 'clear' })}>Clear</button></div>
         <ol className="queue">{audio.queue.map((track, index) => <li key={track.id + '-' + index} className={index === audio.index ? 'current' : ''}>

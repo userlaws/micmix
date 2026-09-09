@@ -1,8 +1,9 @@
 import React from 'react';
-// Inline SVG icons: the CSP forbids data: URIs and remote assets, so everything is drawn in-document.
+// Inline SVG icons keep the interface independent of external icon assets.
 type IconName = 'mic' | 'headphones' | 'waves' | 'music' | 'grid' | 'play' | 'pause' | 'next' | 'prev' | 'speaker' | 'speakerOff'
-  | 'gear' | 'link' | 'plus' | 'youtube' | 'file' | 'close' | 'check' | 'chevron' | 'duck' | 'stop' | 'bolt' | 'trash' | 'keyboard' | 'refresh' | 'heart';
+  | 'gear' | 'link' | 'plus' | 'youtube' | 'file' | 'close' | 'check' | 'chevron' | 'duck' | 'stop' | 'bolt' | 'trash' | 'keyboard' | 'refresh' | 'heart' | 'search';
 const PATHS: Record<IconName, React.ReactNode> = {
+  search: <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4.5 4.5" /></>,
   mic: <><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" /></>,
   headphones: <><path d="M4 14v-2a8 8 0 0 1 16 0v2" /><rect x="3" y="13" width="4" height="7" rx="1.5" /><rect x="17" y="13" width="4" height="7" rx="1.5" /></>,
   waves: <path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2" />,

@@ -196,13 +196,23 @@ app.whenReady().then(async () => {
     if (!fromUi(event)) throw new Error('Unauthorized');
     if (typeof value !== 'string') throw new Error('Enter a YouTube link or something to search for.');
     const input = youtubeInput(value);
-    const selected = input.kind === 'video' ? { videoId: input.videoId, title: 'YouTube · ' + input.videoId }
-      : await youtubeSearch?.pick(input.query);
-    if (!selected) return null;
+    if (input.kind !== 'video') throw new Error('Search YouTube and choose a result first.');
+    const selected = { videoId: input.videoId, title: youtubeSearch?.result(input.videoId)?.title || 'YouTube · ' + input.videoId };
     const track: LocalTrack = { id: randomUUID(), title: selected.title, url: 'https://www.youtube.com/watch?v=' + selected.videoId, youtubeId: selected.videoId };
     localFiles.set(track.id, track); return track;
   });
-  ipcMain.on('youtube-search:select', (event, data) => youtubeSearch?.event(event, data));
+  ipcMain.handle('youtube:search', (event, query: unknown) => {
+    if (!fromUi(event)) throw new Error('Unauthorized');
+    if (typeof query !== 'string') throw new Error('Enter something to search for.');
+    const input = youtubeInput(query);
+    if (input.kind !== 'search') throw new Error('Paste video links into the Music search box to load them.');
+    if (!youtubeSearch) throw new Error('YouTube search is not ready. Please try again.');
+    return youtubeSearch.search(input.query);
+  });
+  ipcMain.handle('youtube:search-cancel', event => {
+    if (!fromUi(event)) throw new Error('Unauthorized');
+    youtubeSearch?.close();
+  });
   ipcMain.handle('youtube:control', (event, command: YouTubeCommand) => {
     if (!fromWorker(event)) throw new Error('Unauthorized');
     if (!youtube || !command || !['load', 'play', 'pause', 'seek'].includes(command.type)) throw new Error('YouTube player unavailable.');
@@ -380,7 +390,7 @@ app.whenReady().then(async () => {
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
     protect(ui);
     youtube = new YouTubeView(ui, update => { if (worker && !worker.isDestroyed()) worker.webContents.send('audio:youtube', update); });
-    youtubeSearch = new YouTubeSearch(ui);
+    youtubeSearch = new YouTubeSearch();
     ui.webContents.on('render-process-gone', () => {
       youtube?.pause();
       if (worker && !worker.isDestroyed()) worker.webContents.send('audio:command', ++commandId, { type: 'stop' });

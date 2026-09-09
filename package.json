@@ -13,6 +13,7 @@
     "check:phase4": "npm run build && node scripts/start.mjs --smoke-phase4",
     "check:capture": "npm run build && node scripts/run-capture-probe.mjs",
     "check:youtube": "npm run build && node scripts/run-capture-probe.mjs --youtube",
+    "check:youtube-search": "npm run build && node scripts/check-youtube-search.mjs",
     "dist:win": "npm run build && electron-builder --win nsis --publish never",
     "pack:dir": "npm run build && electron-builder --dir"
   },

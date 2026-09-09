@@ -1,83 +1,38 @@
-import { BrowserWindow, session, type IpcMainEvent, type Session } from 'electron';
-import path from 'node:path';
-import { youtubeId } from './youtube-url';
+﻿import { fetchYouTubeResults } from './youtube-results';
+import type { YouTubeResult } from './shared';
+import { rankYouTubeResults } from './youtube-fuzzy';
 
-export interface YouTubeSearchSelection { videoId: string; title: string }
-
-function youtubePage(value: string) {
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' && (url.hostname === 'youtube.com' || url.hostname.endsWith('.youtube.com'));
-  } catch { return false; }
-}
-
+// One bounded request at a time; searches never create windows or video players.
 export class YouTubeSearch {
-  private picker: { win: BrowserWindow; finish(value: YouTubeSearchSelection | null, error?: Error): void } | null = null;
-  private remote: Session;
+  private pending: AbortController | null = null;
+  private results = new Map<string, YouTubeResult>();
 
-  constructor(private host: BrowserWindow) {
-    this.remote = session.fromPartition('micmix-youtube-search');
-    this.remote.setPermissionCheckHandler(() => false);
-    this.remote.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-    this.remote.on('will-download', event => event.preventDefault());
-  }
+  result(videoId: string) { return this.results.get(videoId); }
 
-  private select(value: unknown, sender?: Electron.WebContents) {
-    const active = this.picker;
-    if (!active || (sender && sender !== active.win.webContents) || !value || typeof value !== 'object') return false;
-    const data = value as { url?: unknown; title?: unknown };
-    if (typeof data.url !== 'string' || data.url.length > 2048) return false;
+  async search(query: string): Promise<YouTubeResult[] | null> {
+    this.close();
+    const controller = new AbortController();
+    this.pending = controller;
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 20000);
     try {
-      const videoId = youtubeId(data.url);
-      const rawTitle = typeof data.title === 'string' ? data.title.replace(/\s+/g, ' ').trim().slice(0, 500) : '';
-      active.finish({ videoId, title: rawTitle || 'YouTube · ' + videoId });
-      return true;
-    } catch { return false; }
-  }
-
-  event(event: IpcMainEvent, data: unknown) { this.select(data, event.sender); }
-
-  pick(query: string): Promise<YouTubeSearchSelection | null> {
-    if (this.picker) {
-      this.picker.win.show(); this.picker.win.focus();
-      return Promise.reject(new Error('Finish or close the open YouTube search first.'));
+      const results = rankYouTubeResults(query, await fetchYouTubeResults(query, controller.signal));
+      if (controller.signal.aborted) return null;
+      for (const result of results) {
+        this.results.delete(result.videoId);
+        this.results.set(result.videoId, result);
+      }
+      while (this.results.size > 120) this.results.delete(this.results.keys().next().value!);
+      return results;
+    } catch (error) {
+      if (timedOut) throw new Error('YouTube search timed out. Try again or paste a video link.');
+      if (controller.signal.aborted) return null;
+      throw new Error(error instanceof Error ? error.message : 'YouTube search could not load. Please try again.');
+    } finally {
+      clearTimeout(timer);
+      if (this.pending === controller) this.pending = null;
     }
-    const win = new BrowserWindow({
-      parent: this.host, modal: true, show: false, width: 1120, height: 780, minWidth: 760, minHeight: 560,
-      title: 'Search YouTube — MicMix', autoHideMenuBar: true, backgroundColor: '#0f0f0f',
-      webPreferences: { preload: path.join(__dirname, 'youtube-search-preload.cjs'), session: this.remote,
-        sandbox: true, nodeIntegration: false, contextIsolation: true }
-    });
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      const finish = (value: YouTubeSearchSelection | null, error?: Error) => {
-        if (settled) return;
-        settled = true;
-        if (this.picker?.win === win) this.picker = null;
-        if (!win.isDestroyed()) win.close();
-        if (error) reject(error); else resolve(value);
-      };
-      this.picker = { win, finish };
-      win.webContents.setWindowOpenHandler(details => {
-        this.select({ url: details.url, title: '' }, win.webContents);
-        return { action: 'deny' };
-      });
-      win.webContents.on('will-navigate', (event, url) => {
-        if (this.select({ url, title: '' }, win.webContents)) { event.preventDefault(); return; }
-        if (!youtubePage(url)) event.preventDefault();
-      });
-      win.webContents.on('did-navigate-in-page', (_event, url) => { this.select({ url, title: '' }, win.webContents); });
-      win.webContents.on('page-title-updated', event => { event.preventDefault(); win.setTitle('Choose a YouTube video — MicMix'); });
-      win.webContents.on('did-fail-load', (_event, code, description, _url, main) => {
-        if (main && code !== -3) finish(null, new Error('YouTube search could not load: ' + description + '.'));
-      });
-      win.on('closed', () => finish(null));
-      win.once('ready-to-show', () => { if (!settled) { win.show(); win.focus(); } });
-      const url = new URL('https://www.youtube.com/results');
-      url.searchParams.set('search_query', query);
-      void win.loadURL(url.href).catch(error => finish(null, error instanceof Error ? error : new Error(String(error))));
-    });
   }
 
-  close() { this.picker?.finish(null); }
+  close() { this.pending?.abort(); this.pending = null; }
 }

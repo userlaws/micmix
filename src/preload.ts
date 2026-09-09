@@ -21,6 +21,8 @@ if (process.argv.includes('--audio-worker')) {
     return () => { ipcRenderer.removeListener(channel, listener); };
   };
   const api: MicMixBridge = {
+    searchYouTube: query => ipcRenderer.invoke('youtube:search', query),
+    cancelYouTubeSearch: () => ipcRenderer.invoke('youtube:search-cancel'),
     youtubeTrack: url => ipcRenderer.invoke('youtube:track', url),
     videoBounds: bounds => ipcRenderer.send('youtube:bounds', bounds),
     pickFiles: () => ipcRenderer.invoke('files:pick'),

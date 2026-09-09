@@ -91,6 +91,7 @@ videos may also refuse to play.
 | `npm run build` | Type-check (tsc) and bundle (esbuild) into `dist/`. |
 | `npm run check:phase2` | Silent Electron playback tests (all codecs, queue, ducking, limiter, monitor). |
 | `npm run check:phase3` | Silent YouTube embed load + capture test. |
+| `npm run check:youtube-search` | Live search, fuzzy ranking, thumbnails, queue additions, cancellation, and error recovery. |
 | `npm run check:phase4` | Fresh-install + restart simulation (wizard, pads, hotkeys, persistence). |
 | `npm run check:phase5` | About/donation UI check. |
 | `npm run dist:win` | Build the NSIS installer (see below). |
