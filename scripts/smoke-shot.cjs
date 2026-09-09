@@ -20,5 +20,8 @@ module.exports = async function smoke(ui, worker, root) {
   await evalUi(`document.querySelector('.gear').click()`);
   await sleep(300);
   await writeFile(path.join(shots, 'shot-settings.png'), (await ui.webContents.capturePage()).toPNG());
+  await evalUi(`document.querySelector('.about').scrollIntoView({ block: 'end' })`);
+  await sleep(300);
+  await writeFile(path.join(shots, 'shot-about.png'), (await ui.webContents.capturePage()).toPNG());
   console.log('Screenshots written:', JSON.stringify(layout));
 };

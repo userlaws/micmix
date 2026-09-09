@@ -53,7 +53,8 @@
       "target": [
         "nsis"
       ],
-      "artifactName": "MicMix-Setup-${version}.${ext}"
+      "artifactName": "MicMix-Setup-${version}.${ext}",
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -63,7 +64,10 @@
       "include": "build/installer.nsh",
       "license": "build/LICENSE-notice.txt",
       "uninstallDisplayName": "MicMix ${version}",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
     }
   }
 }

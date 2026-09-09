@@ -343,8 +343,8 @@ app.whenReady().then(async () => {
   });
   if (!diagnose) {
     ui = new BrowserWindow({ width: 1400, height: 920, minWidth: 960, minHeight: 680,
-      title: 'MicMix', backgroundColor: '#0b0e14', autoHideMenuBar: true,
-      titleBarStyle: 'hidden', titleBarOverlay: { color: '#0b0e14', symbolColor: '#c9d0dc', height: 40 },
+      title: 'MicMix', backgroundColor: '#071126', autoHideMenuBar: true, icon: path.join(__dirname, 'brand', 'icon.png'),
+      titleBarStyle: 'hidden', titleBarOverlay: { color: '#071126', symbolColor: '#c9d0dc', height: 40 },
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
     protect(ui);
     youtube = new YouTubeView(ui, update => { if (worker && !worker.isDestroyed()) worker.webContents.send('audio:youtube', update); });

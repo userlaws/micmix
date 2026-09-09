@@ -171,8 +171,8 @@ function App() {
     {wizard && <Wizard cable={cable} reportError={report?.error ?? null} microphones={microphones} playbacks={playbacks}
       micId={micId} monitorId={monitorId} setMicId={setMicId} setMonitorId={setMonitorId} audio={audio} busy={busy} send={send} finish={finishWizard} />}
     <header>
-      <div className="brand"><div className="logo"><Icon name="mic" size={28} /></div>
-        <div><h1>MicMix{config?.appVersion && <span className="version">v{config.appVersion}</span>}</h1><div className="sub">Your voice + your music. One microphone.</div></div></div>
+      <div className="brand"><img className="logo" src="./brand/micmix-mark.svg" alt="" width={52} height={52} />
+        <div><h1>Mic<span className="mix">Mix</span>{config?.appVersion && <span className="version">v{config.appVersion}</span>}</h1><div className="sub">Your voice + your music. One microphone.</div></div></div>
       <div className="header-actions">
         <div className="air-group">
           <div className="air-status"><span className={'dot ' + (live ? 'on' : audio.status === 'starting' ? 'warn' : '')} />
@@ -292,7 +292,7 @@ function App() {
               <small>Automatic Discord device switching needs a Discord-approved app and an online sign-in, so MicMix keeps this manual and never touches Discord's files.</small></div>
           </div>
           <div className="group span about"><h2>About MicMix{config?.appVersion ? ' ' + config.appVersion : ''}</h2>
-            <div className="row"><p>One microphone for your voice plus music, YouTube and a soundboard, routed into Discord, FiveM and any app through the MicMix Virtual Mic.</p>
+            <div className="row"><img className="about-art" src="./brand/micmix-primary-1024.png" alt="MicMix logo" width={96} height={96} /><p>One microphone for your voice plus music, YouTube and a soundboard, routed into Discord, FiveM and any app through the MicMix Virtual Mic.</p>
               <p>The virtual microphone is <strong>VB-CABLE</strong> by <strong>VB-Audio Software</strong>, included as donationware. If MicMix is useful, please support its author.</p>
               <div className="actions"><button className="btn primary" onClick={() => void window.micmix.openDonation()}><Icon name="heart" size={16} />Donate to VB-Audio</button>
                 <button className="btn" onClick={() => void window.micmix.openVbCableSite()}>vb-audio.com/Cable</button></div></div>

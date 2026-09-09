@@ -17,7 +17,7 @@ export function Wizard(props: Props) {
   const canStart = !!props.micId && cable && !busy && audio.status === 'off' && (!audio.settings.monitor || !!props.monitorId);
   return <div className="wizard-backdrop" role="dialog" aria-modal="true" aria-label="MicMix setup">
     <section className="card wizard">
-      <div className="card-head"><div><h2>Set up MicMix</h2><div className="sub">Step {step + 1} of {STEPS.length} · {STEPS[step]}</div></div></div>
+      <div className="card-head"><div className="brand"><img className="logo small" src="./brand/micmix-mark.svg" alt="" width={40} height={40} /><div><h2>Set up MicMix</h2><div className="sub">Step {step + 1} of {STEPS.length} · {STEPS[step]}</div></div></div></div>
       <div className="stepper" aria-hidden="true">{STEPS.map((name, i) => <i key={name} className={i <= step ? 'done' : ''} />)}</div>
       {step === 0 && <div>
         <div className={'ok-badge ' + (cable ? '' : 'bad')}><Icon name={cable ? 'check' : 'close'} size={22} /></div>
