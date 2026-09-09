@@ -146,7 +146,7 @@ function App() {
           <input aria-label="YouTube URL" type="url" required placeholder="Paste a YouTube link…" value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} />
           <button disabled={busy || !youtubeUrl.trim()} type="submit">Load link</button>
         </form>
-        {current?.youtubeId ? <><div className="youtube-slot" ref={videoSlot}><span>Loading YouTube player…</span></div><h3 className="youtube-title">{current.title}</h3></> :
+        {current?.youtubeId ? <><div className="youtube-slot" ref={videoSlot}><span>Loading YouTube player…</span></div><h3 className="youtube-title">{current.title}{audio.buffering && <span className="muted"> · Buffering…</span>}</h3></> :
         <div className="now-playing"><span className="eyebrow">{audio.playing ? 'NOW PLAYING' : current ? 'READY TO PLAY' : 'MUSIC SOURCES'}</span>
           <div className="record-icon" aria-hidden="true">♫</div><h3>{current?.title ?? 'Bring your music'}</h3>
           <p>{current ? 'Local file · ' + (audio.index + 1) + ' of ' + audio.queue.length : 'Paste a YouTube link above, or drop MP3, WAV, FLAC, or OGG files here'}</p>

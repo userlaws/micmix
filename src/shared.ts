@@ -43,7 +43,7 @@ export type AudioCommand = { type: 'start'; deviceId: string; monitorId?: string
   | { type: 'seek'; seconds: number } | { type: 'clear' };
 export interface AudioState {
   status: 'off' | 'starting' | 'live'; micId: string | null; tone: boolean; error: string | null;
-  monitorId: string | null; queue: LocalTrack[]; index: number; playing: boolean;
+  monitorId: string | null; queue: LocalTrack[]; index: number; playing: boolean; buffering: boolean;
   position: number; duration: number; settings: MixerSettings;
 }
 export interface LocalTrack { id: string; title: string; url: string; youtubeId?: string }
@@ -68,6 +68,6 @@ export const defaultSettings: MixerSettings = {
 export const emptyMeters: Meters = { mic: 0, music: 0, soundboard: 0, master: 0, ducking: false, reduction: 0, overload: false };
 export function initialAudioState(): AudioState {
   return { status: 'off', micId: null, monitorId: null, tone: false, error: null,
-    queue: [], index: -1, playing: false, position: 0, duration: 0,
+    queue: [], index: -1, playing: false, buffering: false, position: 0, duration: 0,
     settings: structuredClone(defaultSettings) };
 }

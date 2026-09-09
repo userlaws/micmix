@@ -57,7 +57,7 @@ export function stop(error: string | null = null) {
   const previousContexts = [context, monitorContext];
   context = monitorContext = null; sinkId = null;
   for (const previous of previousContexts) if (previous && previous.state !== 'closed') void previous.close().catch(() => {});
-  publish({ status: 'off', micId: null, monitorId: null, tone: false, playing: false, position, error });
+  publish({ status: 'off', micId: null, monitorId: null, tone: false, playing: false, buffering: false, position, error });
   window.audioHost.meters(emptyMeters);
 }
 export function checkDevices(devices: AudioDevice[]) {
@@ -158,7 +158,7 @@ function loadTrack(index: number, autoPlay: boolean, position = 0) {
   if (!state.queue[index]) throw new Error('This queue item no longer exists.');
   const track = state.queue[index];
   disposeMusic();
-  publish({ index, position, duration: 0, playing: false, error: null });
+  publish({ index, position, duration: 0, playing: false, buffering: false, error: null });
   if (track.youtubeId) {
     activeYoutubeId = track.youtubeId;
     const version = mediaVersion;
@@ -248,11 +248,12 @@ export function youtubeUpdate(update: YouTubeUpdate) {
   if (update.error) { patch.error = update.error; patch.playing = false; }
   if (update.playerState === 1) {
     if (state.status !== 'live' || !youtubeStream) { void window.audioHost.youtube({ type: 'pause' }).catch(() => {}); }
-    else { patch.playing = true; patch.error = null; }
-  } else if (update.playerState === 2 || update.playerState === 5) patch.playing = false;
+    else { patch.playing = true; patch.buffering = false; patch.error = null; }
+  } else if (update.playerState === 3) patch.buffering = true;
+  else if (update.playerState === 2 || update.playerState === 5) { patch.playing = false; patch.buffering = false; }
   if (update.playerState === 0) {
     const advance = state.playing && state.status === 'live';
-    publish({ ...patch, playing: false });
+    publish({ ...patch, playing: false, buffering: false });
     if (advance && state.index + 1 < state.queue.length) loadTrack(state.index + 1, true);
     return;
   }
@@ -308,11 +309,11 @@ export async function command(value: AudioCommand) {
       const queue = state.queue.filter((_, index) => index !== value.index);
       const wasPlaying = state.playing;
       if (value.index === state.index) {
-        disposeMusic(); publish({ queue, index: -1, position: 0, duration: 0, playing: false });
+        disposeMusic(); publish({ queue, index: -1, position: 0, duration: 0, playing: false, buffering: false });
         if (queue.length) loadTrack(Math.min(value.index, queue.length - 1), wasPlaying);
       } else publish({ queue, index: value.index < state.index ? state.index - 1 : state.index });
       break;
     }
-    case 'clear': disposeMusic(); publish({ queue: [], index: -1, position: 0, duration: 0, playing: false }); break;
+    case 'clear': disposeMusic(); publish({ queue: [], index: -1, position: 0, duration: 0, playing: false, buffering: false }); break;
   }
 }

@@ -11,7 +11,8 @@ function peakGuard(context: BaseAudioContext) {
 export function limiter(context: BaseAudioContext) {
   const node = context.createDynamicsCompressor();
   node.threshold.value = -1; node.knee.value = 0; node.ratio.value = 20;
-  node.attack.value = 0.003; node.release.value = 0.05;
+  // 150 ms release: a 50 ms release on a ratio-20 limiter pumps audibly when voice and music both hit the ceiling.
+  node.attack.value = 0.003; node.release.value = 0.15;
   return node;
 }
 export function createMixerGraph(context: BaseAudioContext, initial: MixerSettings) {
