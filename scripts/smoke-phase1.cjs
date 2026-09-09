@@ -26,7 +26,7 @@ module.exports = async function smoke(ui, worker, root) {
   assert.match(result.errors[2], /Invalid audio command/);
   assert.ok(result.options.length > 1);
   assert.ok(result.options.every(label => !/CABLE/i.test(label)));
-  assert.match(result.text, /PHASE [12]/);
+  assert.match(result.text, /MicMix/); // header text, phase-label-agnostic
   const sink = await worker.webContents.executeJavaScript(`(async () => {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const cable = devices.find(d => d.kind === 'audiooutput' && /CABLE Input/i.test(d.label) && !['default', 'communications'].includes(d.deviceId));

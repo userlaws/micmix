@@ -5,6 +5,20 @@ module.exports = async function smoke(ui, worker, root, registerFiles, youtube) 
   assert.equal(ui.isVisible(), true); assert.equal(worker.isVisible(), false);
   assert.equal(youtube.view.webContents.isAudioMuted(), true);
   const parser = await worker.webContents.executeJavaScript(`import('./phase3-checks.js').then(module => module.run())`);
+  // Since Phase 4, a fresh profile opens the setup wizard, which keeps the YouTube BrowserView
+  // detached (it renders above all DOM). Finish setup first, exactly as a first-run user does,
+  // so the video can attach and its capture source can start.
+  await ui.webContents.executeJavaScript(`(async () => {
+    for (let i = 0; i < 60 && document.querySelector('.wizard'); i++) {
+      const finish = [...document.querySelectorAll('.wizard button')].find(b => b.textContent.trim().startsWith('Finish'));
+      if (finish) { finish.click(); break; }
+      const next = [...document.querySelectorAll('.wizard-nav button')].find(b => b.textContent.trim().startsWith('Next') && !b.disabled);
+      if (next) next.click(); else await window.micmix.completeSetup();
+      await new Promise(r => setTimeout(r, 60));
+    }
+    for (let i = 0; i < 60 && document.querySelector('.wizard'); i++) await new Promise(r => setTimeout(r, 50));
+    if (document.querySelector('.wizard')) throw new Error('Setup wizard did not close');
+  })()`);
   const result = await ui.webContents.executeJavaScript(`(async () => {
     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
     const waitFor = async (predicate, description) => {

@@ -1,4 +1,4 @@
-import { initialAudioState, emptyMeters, type AudioCommand, type AudioDevice, type AudioState, type LocalTrack, type YouTubeUpdate } from './shared';
+import { initialAudioState, emptyMeters, type AudioCommand, type AudioDevice, type AudioState, type LocalTrack, type YouTubeUpdate, type SoundPad } from './shared';
 import { cableSink, microphoneChoices, playbackChoices } from './devices';
 import { createMixerGraph } from './mixer-graph';
 
@@ -21,6 +21,10 @@ let youtubeSource: MediaStreamAudioSourceNode | null = null;
 let activeYoutubeId: string | null = null;
 let youtubeReady: Promise<void> = Promise.resolve();
 let state = initialAudioState();
+// Soundboard clips are decoded once per registered file and replayed from memory.
+const padBuffers = new Map<string, AudioBuffer>();
+const padSources = new Map<number, AudioBufferSourceNode>();
+let padsVersion = 0;
 function publish(patch: Partial<AudioState>) {
   state = { ...state, ...patch };
   window.audioHost.state(state);
@@ -40,6 +44,7 @@ function disposeMusic() {
 }
 export function stop(error: string | null = null) {
   ++epoch;
+  stopPads();
   const position = element && Number.isFinite(element.currentTime) ? element.currentTime : state.position;
   disposeMusic();
   clearInterval(timer);
@@ -259,6 +264,52 @@ export function youtubeUpdate(update: YouTubeUpdate) {
   }
   if (Object.keys(patch).length) publish(patch);
 }
+function updatePad(slot: number, patch: Partial<AudioState['pads'][number]>) {
+  publish({ pads: state.pads.map((pad, index) => index === slot && pad ? { ...pad, ...patch } : pad) });
+}
+function publishActivePads() { publish({ activePads: [...padSources.keys()].sort((a, b) => a - b) }); }
+async function setPads(pads: (SoundPad | null)[]) {
+  const version = ++padsVersion;
+  stopPads();
+  publish({ pads: pads.map(pad => pad ? { ...pad, ready: padBuffers.has(pad.id), error: null } : null) });
+  const keep = new Set(pads.filter((pad): pad is SoundPad => !!pad).map(pad => pad.id));
+  for (const id of [...padBuffers.keys()]) if (!keep.has(id)) padBuffers.delete(id);
+  await Promise.all(pads.map(async (pad, slot) => {
+    if (!pad || padBuffers.has(pad.id)) return;
+    try {
+      const bytes = await window.audioHost.readClip(pad.id);
+      const data = bytes instanceof ArrayBuffer ? bytes : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+      const buffer = await new OfflineAudioContext(2, 48000, 48000).decodeAudioData(data);
+      if (buffer.duration > 60) throw new Error('Soundboard clips must be 60 seconds or shorter.');
+      if (version !== padsVersion) return;
+      padBuffers.set(pad.id, buffer);
+      updatePad(slot, { ready: true, error: null });
+    } catch (error) {
+      if (version === padsVersion) updatePad(slot, { ready: false, error: 'Cannot load "' + pad.title + '": ' + (error instanceof Error ? error.message : String(error)) });
+    }
+  }));
+}
+function playPad(slot: number) {
+  if (!context || !graph || state.status !== 'live') throw new Error('Go LIVE before playing soundboard clips.');
+  const pad = state.pads[slot];
+  if (!pad) throw new Error('This pad is empty. Use Edit to choose a clip.');
+  const existing = padSources.get(slot);
+  if (existing) { existing.stop(); return; }
+  const buffer = padBuffers.get(pad.id);
+  if (!buffer) throw new Error(pad.error ?? 'This clip is still loading.');
+  const source = context.createBufferSource();
+  source.buffer = buffer; source.connect(graph.soundboard);
+  source.onended = () => {
+    source.disconnect();
+    if (padSources.get(slot) === source) { padSources.delete(slot); publishActivePads(); }
+  };
+  padSources.set(slot, source); source.start(); publishActivePads();
+}
+function stopPads() {
+  for (const source of padSources.values()) { source.onended = null; try { source.stop(); } catch { /* already ended */ } source.disconnect(); }
+  padSources.clear();
+  if (state.activePads.length) publish({ activePads: [] });
+}
 function tone() {
   if (!context || !graph || state.status !== 'live') throw new Error('Go LIVE before testing the virtual output.');
   if (oscillator) return;
@@ -315,5 +366,8 @@ export async function command(value: AudioCommand) {
       break;
     }
     case 'clear': disposeMusic(); publish({ queue: [], index: -1, position: 0, duration: 0, playing: false, buffering: false }); break;
+    case 'pads': await setPads(value.pads); break;
+    case 'pad': playPad(value.slot); break;
+    case 'stopPads': stopPads(); break;
   }
 }

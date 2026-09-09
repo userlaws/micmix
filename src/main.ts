@@ -1,13 +1,16 @@
-import { app, BrowserWindow, ipcMain, session, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, session, dialog, globalShortcut, shell } from 'electron';
 import path from 'node:path';
-import { mkdir, writeFile, stat } from 'node:fs/promises';
+import { mkdir, writeFile, stat, readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { pathToFileURL } from 'node:url';
-import { initialAudioState, emptyMeters, type DeviceReport, type AudioState, type AudioCommand, type LocalTrack, type Meters } from './shared';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { initialAudioState, emptyMeters, PAD_COUNT, type DeviceReport, type AudioState, type AudioCommand, type LocalTrack, type Meters,
+  type SoundPad, type IntegrationStatus, type SavedConfig, type YouTubeCommand, type VideoBounds } from './shared';
 import { validCommand } from './commands';
+import { validAccelerator } from './hotkeys';
+import { loadConfig, saveConfig } from './config';
+import { integrationStatus } from './processes';
 import { youtubeId } from './youtube-url';
 import { YouTubeView } from './youtube-view';
-import type { YouTubeCommand, VideoBounds } from './shared';
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.setName('MicMix');
@@ -16,8 +19,8 @@ const diagnose = process.argv.includes('--diagnose');
 // --smoke-<name> loads scripts/smoke-<name>.cjs in an isolated diagnostics profile.
 const smokeName = process.argv.map(arg => /^--smoke-([a-z0-9-]+)$/.exec(arg)?.[1]).find(Boolean);
 const smokeTest = smokeName !== undefined;
-// Diagnostics use their own cache so they can run beside the user's open app.
-if (diagnose || smokeTest) app.setPath('userData', path.join(app.getPath('temp'), 'micmix-diagnostics-' + process.pid));
+// Diagnostics use their own profile so they can run beside the user's open app.
+if (diagnose || smokeTest) app.setPath('userData', process.env.MICMIX_USERDATA || path.join(app.getPath('temp'), 'micmix-diagnostics-' + process.pid));
 else if (!app.requestSingleInstanceLock()) app.quit();
 let ui: BrowserWindow | null = null;
 let worker: BrowserWindow | null = null;
@@ -39,20 +42,115 @@ async function registerFiles(paths: string[]) {
   for (const track of tracks) localFiles.set(track.id, track);
   return tracks;
 }
+
+// Persistence: main owns config.json; the worker's state is mirrored into it after startup restore.
+const configPath = () => path.join(app.getPath('userData'), 'config.json');
+let config: SavedConfig;
+let restored = false;
+let saveTimer: NodeJS.Timeout | undefined;
+function flushConfig() {
+  clearTimeout(saveTimer); saveTimer = undefined;
+  try { saveConfig(configPath(), config); } catch (error) { console.error('Could not save MicMix settings:', error); }
+}
+function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(flushConfig, 500); }
+
 let commandId = 0;
 const pending = new Map<number, { resolve(): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
 function publishAudio(state: AudioState) {
   audioState = state;
+  if (restored) { config.settings = state.settings; config.queue = state.queue; scheduleSave(); }
   if (ui && !ui.isDestroyed()) ui.webContents.send('audio:state', state);
 }
 function cancelPending(reason: string) {
   for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject(new Error(reason)); }
   pending.clear();
 }
+function runCommand(command: AudioCommand) {
+  if (!worker || worker.isDestroyed() || worker.webContents.isDestroyed()) throw new Error('Audio worker unavailable. Restart MicMix.');
+  if (command.type === 'stop') cancelPending('Audio operation cancelled.');
+  const id = ++commandId;
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      if (worker && !worker.isDestroyed()) worker.webContents.send('audio:command', ++commandId, { type: 'stop' });
+      reject(new Error('Audio command timed out. Output stopped; check microphone permissions and retry.'));
+    }, 15000);
+    pending.set(id, { resolve, reject, timer });
+    worker!.webContents.send('audio:command', id, command);
+  });
+}
+
+// Soundboard pad definitions live here; the worker decodes and plays them.
+let pads: (SoundPad | null)[] = Array.from({ length: PAD_COUNT }, () => null);
+function syncHotkeys() {
+  globalShortcut.unregisterAll();
+  for (const pad of pads) {
+    if (!pad?.hotkey) continue;
+    const slot = pad.slot;
+    if (!globalShortcut.register(pad.hotkey, () => { void runCommand({ type: 'pad', slot }).catch(() => {}); })) {
+      console.error('Hotkey unavailable:', pad.hotkey);
+    }
+  }
+}
+async function updatePads(next: (SoundPad | null)[]) {
+  pads = next; config.pads = next; scheduleSave();
+  syncHotkeys();
+  await runCommand({ type: 'pads', pads });
+}
+async function assignPadFile(slot: number, file: string) {
+  const [track] = await registerFiles([file]);
+  const next = pads.slice();
+  next[slot] = { slot, id: track.id, title: track.title, url: track.url, hotkey: pads[slot]?.hotkey ?? null };
+  await updatePads(next);
+}
+function validSlot(slot: unknown): slot is number { return Number.isInteger(slot) && (slot as number) >= 0 && (slot as number) < PAD_COUNT; }
+
+async function restore() {
+  try { await runCommand({ type: 'settings', settings: config.settings }); } catch (error) { console.error(error); }
+  const restoredPads: (SoundPad | null)[] = Array.from({ length: PAD_COUNT }, () => null);
+  for (const pad of config.pads) {
+    if (!pad) continue;
+    try {
+      const [track] = await registerFiles([fileURLToPath(pad.url)]);
+      restoredPads[pad.slot] = { slot: pad.slot, id: track.id, title: track.title, url: track.url, hotkey: pad.hotkey };
+    } catch { /* The clip file is gone; the pad becomes empty. */ }
+  }
+  pads = restoredPads; config.pads = pads; syncHotkeys();
+  if (pads.some(Boolean)) await runCommand({ type: 'pads', pads }).catch(error => console.error(error));
+  const tracks: LocalTrack[] = [];
+  for (const saved of config.queue) {
+    if (saved.youtubeId) {
+      const track: LocalTrack = { id: randomUUID(), title: saved.title, url: saved.url, youtubeId: saved.youtubeId };
+      localFiles.set(track.id, track); tracks.push(track);
+    } else {
+      try { tracks.push((await registerFiles([fileURLToPath(saved.url)]))[0]); } catch { /* Missing file is dropped from the queue. */ }
+    }
+  }
+  if (tracks.length) await runCommand({ type: 'enqueue', tracks }).catch(error => console.error(error));
+  restored = true;
+  config.queue = audioState.queue; scheduleSave();
+}
+
+let integrations: IntegrationStatus = { discord: false, fivem: false };
+let integrationTimer: NodeJS.Timeout | undefined;
+async function pollIntegrations() {
+  const next = await integrationStatus();
+  if (next.discord !== integrations.discord || next.fivem !== integrations.fivem) {
+    integrations = next;
+    if (ui && !ui.isDestroyed()) ui.webContents.send('integrations:status', integrations);
+  }
+}
+
 const audioUrl = pathToFileURL(path.join(__dirname, 'audio.html')).href;
 const uiUrl = pathToFileURL(path.join(__dirname, 'index.html')).href;
 function isWorker(contents: Electron.WebContents | null) {
   return !!worker && contents === worker.webContents && contents.getURL() === audioUrl;
+}
+function fromUi(event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) {
+  return event.sender === ui?.webContents && event.senderFrame?.url === uiUrl;
+}
+function fromWorker(event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) {
+  return isWorker(event.sender) && event.senderFrame?.url === audioUrl;
 }
 function publish(report: DeviceReport) {
   latest = report;
@@ -63,6 +161,7 @@ function protect(win: BrowserWindow) {
   win.webContents.on('will-navigate', event => event.preventDefault());
 }
 app.whenReady().then(async () => {
+  config = loadConfig(configPath());
   const audioSession = session.fromPartition('micmix-audio');
   audioSession.setPermissionCheckHandler((contents, permission) =>
     isWorker(contents) && (permission === 'media' || permission === 'speaker-selection' || permission === 'display-capture'));
@@ -79,20 +178,20 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionCheckHandler(() => false);
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ipcMain.handle('youtube:track', (event, url: string) => {
-    if (event.sender !== ui?.webContents || event.senderFrame?.url !== uiUrl) throw new Error('Unauthorized');
+    if (!fromUi(event)) throw new Error('Unauthorized');
     if (typeof url !== 'string' || url.length > 2048) throw new Error('Paste a YouTube video link.');
     const videoId = youtubeId(url);
     const track: LocalTrack = { id: randomUUID(), title: 'YouTube · ' + videoId, url: 'https://www.youtube.com/watch?v=' + videoId, youtubeId: videoId };
     localFiles.set(track.id, track); return track;
   });
   ipcMain.handle('youtube:control', (event, command: YouTubeCommand) => {
-    if (!isWorker(event.sender) || event.senderFrame?.url !== audioUrl) throw new Error('Unauthorized');
+    if (!fromWorker(event)) throw new Error('Unauthorized');
     if (!youtube || !command || !['load', 'play', 'pause', 'seek'].includes(command.type)) throw new Error('YouTube player unavailable.');
     return youtube.command(command);
   });
   ipcMain.on('youtube:event', (event, data) => { if (data && typeof data === 'object') youtube?.event(event, data); });
   ipcMain.on('youtube:bounds', (event, bounds: VideoBounds | null) => {
-    if (event.sender !== ui?.webContents || event.senderFrame?.url !== uiUrl) return;
+    if (!fromUi(event)) return;
     if (bounds === null) { youtube?.bounds(null); return; }
     if (!bounds || !['x', 'y', 'width', 'height'].every(key => Number.isFinite(bounds[key as keyof VideoBounds]))) return;
     const [width, height] = ui!.getContentSize();
@@ -100,69 +199,111 @@ app.whenReady().then(async () => {
     youtube?.bounds({ x: Math.round(bounds.x), y: Math.round(bounds.y), width: Math.round(bounds.width), height: Math.round(bounds.height) });
   });
   ipcMain.handle('files:pick', async event => {
-    if (event.sender !== ui?.webContents || event.senderFrame?.url !== uiUrl) throw new Error('Unauthorized');
+    if (!fromUi(event)) throw new Error('Unauthorized');
     const result = await dialog.showOpenDialog(ui!, { properties: ['openFile', 'multiSelections'],
       filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'flac', 'ogg'] }] });
     return result.canceled ? [] : registerFiles(result.filePaths);
   });
   ipcMain.handle('files:drop', (event, paths: string[]) => {
-    if (event.sender !== ui?.webContents || event.senderFrame?.url !== uiUrl) throw new Error('Unauthorized');
+    if (!fromUi(event)) throw new Error('Unauthorized');
     return registerFiles(paths);
+  });
+  ipcMain.handle('clips:read', async (event, id: string) => {
+    if (!fromWorker(event)) throw new Error('Unauthorized');
+    const track = typeof id === 'string' ? localFiles.get(id) : undefined;
+    if (!track || track.youtubeId) throw new Error('Unknown clip.');
+    const file = fileURLToPath(track.url);
+    if ((await stat(file)).size > 30 * 1024 * 1024) throw new Error('Soundboard clips must be under 30 MB.');
+    return readFile(file);
+  });
+  ipcMain.handle('pads:assign', async (event, slot: number) => {
+    if (!fromUi(event)) throw new Error('Unauthorized');
+    if (!validSlot(slot)) throw new Error('Invalid pad.');
+    const result = await dialog.showOpenDialog(ui!, { properties: ['openFile'], title: 'Choose a soundboard clip',
+      filters: [{ name: 'Audio clips', extensions: ['mp3', 'wav', 'flac', 'ogg'] }] });
+    if (!result.canceled && result.filePaths[0]) await assignPadFile(slot, result.filePaths[0]);
+  });
+  ipcMain.handle('pads:hotkey', async (event, slot: number, hotkey: string | null) => {
+    if (!fromUi(event)) throw new Error('Unauthorized');
+    if (!validSlot(slot) || !pads[slot]) throw new Error('Choose a clip for this pad first.');
+    if (hotkey !== null) {
+      if (!validAccelerator(hotkey)) throw new Error('Use Ctrl, Alt or Shift plus a key, or an F-key or numpad key.');
+      const taken = pads.find(pad => pad && pad.slot !== slot && pad.hotkey === hotkey);
+      if (taken) throw new Error('Pad ' + (taken.slot + 1) + ' already uses that hotkey.');
+      globalShortcut.unregisterAll();
+      const ok = globalShortcut.register(hotkey, () => {});
+      globalShortcut.unregisterAll();
+      if (!ok) { syncHotkeys(); throw new Error('Windows or another app already uses that shortcut. Try a different one.'); }
+    }
+    const next = pads.slice();
+    next[slot] = { ...pads[slot]!, hotkey };
+    await updatePads(next);
+  });
+  ipcMain.handle('pads:clear', async (event, slot: number) => {
+    if (!fromUi(event)) throw new Error('Unauthorized');
+    if (!validSlot(slot)) throw new Error('Invalid pad.');
+    const next = pads.slice(); next[slot] = null;
+    await updatePads(next);
+  });
+  ipcMain.handle('config:get', event => {
+    if (!fromUi(event)) throw new Error('Unauthorized');
+    return { setupDone: config.setupDone, micLabel: config.micLabel, monitorLabel: config.monitorLabel };
+  });
+  ipcMain.handle('config:devices', (event, micLabel: string | null, monitorLabel: string | null) => {
+    if (!fromUi(event)) throw new Error('Unauthorized');
+    const label = (value: unknown) => typeof value === 'string' && value.length <= 300 ? value : null;
+    config.micLabel = label(micLabel) ?? config.micLabel; config.monitorLabel = label(monitorLabel) ?? config.monitorLabel;
+    scheduleSave();
+  });
+  ipcMain.handle('config:setup-done', event => {
+    if (!fromUi(event)) throw new Error('Unauthorized');
+    config.setupDone = true; flushConfig();
+  });
+  ipcMain.handle('integrations:get', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return integrations; });
+  ipcMain.handle('open:vbcable', event => {
+    if (!fromUi(event)) throw new Error('Unauthorized');
+    return shell.openExternal('https://vb-audio.com/Cable/');
   });
 
   ipcMain.handle('audio:get-state', event => {
-    if (event.sender !== ui?.webContents || event.senderFrame?.url !== uiUrl) throw new Error('Unauthorized');
+    if (!fromUi(event)) throw new Error('Unauthorized');
     return audioState;
   });
   ipcMain.handle('audio:command', (event, command: AudioCommand) => {
-    if (event.sender !== ui?.webContents || event.senderFrame?.url !== uiUrl) throw new Error('Unauthorized');
-    if (!validCommand(command)) {
-      throw new Error('Invalid audio command');
-    }
+    if (!fromUi(event)) throw new Error('Unauthorized');
+    // Pad definitions are owned by main; the UI edits them through pads:* handlers.
+    if (!validCommand(command) || command.type === 'pads') throw new Error('Invalid audio command');
     if (command.type === 'enqueue') command = { type: 'enqueue', tracks: command.tracks.map(track => {
       const registered = localFiles.get(track.id);
       if (!registered) throw new Error('Choose this file with Add files or drag and drop first.');
       return registered;
     }) };
-    if (!worker || worker.isDestroyed() || worker.webContents.isDestroyed()) throw new Error('Audio worker unavailable. Restart MicMix.');
-    if (command.type === 'stop') cancelPending('Audio operation cancelled.');
-    const id = ++commandId;
-    return new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        pending.delete(id);
-        if (worker && !worker.isDestroyed()) worker.webContents.send('audio:command', ++commandId, { type: 'stop' });
-        reject(new Error('Audio command timed out. Output stopped; check microphone permissions and retry.'));
-      }, 15000);
-      pending.set(id, { resolve, reject, timer });
-      worker!.webContents.send('audio:command', id, command);
-    });
+    return runCommand(command);
   });
   ipcMain.on('audio:reply', (event, id: number, error: string | null) => {
-    if (!isWorker(event.sender) || event.senderFrame?.url !== audioUrl) return;
+    if (!fromWorker(event)) return;
     const entry = pending.get(id);
     if (!entry) return;
     clearTimeout(entry.timer); pending.delete(id);
     if (error) entry.reject(new Error(error)); else entry.resolve();
   });
-  ipcMain.on('audio:state', (event, state: AudioState) => {
-    if (isWorker(event.sender) && event.senderFrame?.url === audioUrl) publishAudio(state);
-  });
+  ipcMain.on('audio:state', (event, state: AudioState) => { if (fromWorker(event)) publishAudio(state); });
   ipcMain.on('audio:meters', (event, meters: Meters) => {
-    if (isWorker(event.sender) && event.senderFrame?.url === audioUrl && ui && !ui.isDestroyed()) ui.webContents.send('audio:meters', meters);
+    if (fromWorker(event) && ui && !ui.isDestroyed()) ui.webContents.send('audio:meters', meters);
   });
   app.on('second-instance', () => { if (ui) { if (ui.isMinimized()) ui.restore(); ui.show(); ui.focus(); } });
 
   ipcMain.handle('devices:get', event => {
-    if (event.sender !== ui?.webContents || event.senderFrame?.url !== uiUrl) throw new Error('Unauthorized');
+    if (!fromUi(event)) throw new Error('Unauthorized');
     return latest;
   });
   ipcMain.handle('devices:refresh', event => {
-    if (event.sender !== ui?.webContents || event.senderFrame?.url !== uiUrl) throw new Error('Unauthorized');
+    if (!fromUi(event)) throw new Error('Unauthorized');
     if (!worker || worker.isDestroyed()) throw new Error('Audio worker unavailable. Restart MicMix.');
     worker.webContents.send('audio:scan');
   });
   ipcMain.on('audio:report', (event, report: DeviceReport) => {
-    if (!isWorker(event.sender) || event.senderFrame?.url !== audioUrl) return;
+    if (!fromWorker(event)) return;
     publish(report);
     console.log('\nMicMix: actual Electron audio endpoints at ' + report.scannedAt);
     console.table(report.devices.map(device => ({ kind: device.kind, label: device.label || '(label unavailable)', deviceId: device.deviceId })));
@@ -189,7 +330,7 @@ app.whenReady().then(async () => {
   worker.webContents.on('render-process-gone', (_event, details) => {
     youtube?.pause();
     cancelPending('Audio worker stopped. Restart MicMix.');
-    publishAudio({ ...audioState, status: 'off', micId: null, monitorId: null, tone: false, playing: false, error: 'Audio worker stopped. Restart MicMix.' });
+    publishAudio({ ...audioState, status: 'off', micId: null, monitorId: null, tone: false, playing: false, activePads: [], error: 'Audio worker stopped. Restart MicMix.' });
     if (ui && !ui.isDestroyed()) ui.webContents.send('audio:meters', emptyMeters);
     publish({ devices: [], scannedAt: new Date().toISOString(), error: 'Audio worker stopped: ' + details.reason + '. Restart MicMix.',
       setSinkIdSupported: false, secureContext: false });
@@ -197,7 +338,7 @@ app.whenReady().then(async () => {
   });
   if (!diagnose) {
     ui = new BrowserWindow({ width: 1260, height: 850, minWidth: 900, minHeight: 640,
-      title: 'MicMix — Phase 3', backgroundColor: '#101318', autoHideMenuBar: true,
+      title: 'MicMix', backgroundColor: '#101318', autoHideMenuBar: true,
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
     protect(ui);
     youtube = new YouTubeView(ui, update => { if (worker && !worker.isDestroyed()) worker.webContents.send('audio:youtube', update); });
@@ -218,13 +359,20 @@ app.whenReady().then(async () => {
     if (diagnose) app.exit(1);
   }, 20000);
   await worker.loadURL(audioUrl);
+  await restore();
+  void pollIntegrations();
+  integrationTimer = setInterval(() => { void pollIntegrations(); }, 5000);
   if (smokeTest && ui) {
     const deadline = Date.now() + 20000;
     while (!latest && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
     if (!latest) throw new Error('Smoke check timed out waiting for devices.');
     const smoke = require(path.join(app.getAppPath(), 'scripts', 'smoke-' + smokeName + '.cjs'));
-    await smoke(ui, worker, app.getAppPath(), registerFiles, youtube);
+    await smoke(ui, worker, app.getAppPath(), registerFiles, youtube, { assignPadFile, configPath, flushConfig, userData: app.getPath('userData') });
     app.quit();
   }
 }).catch(error => { console.error(error); app.exit(1); });
-app.on('before-quit', () => { clearTimeout(timeout); youtube?.close(); cancelPending('MicMix is closing.'); });
+app.on('before-quit', () => {
+  clearTimeout(timeout); clearInterval(integrationTimer);
+  globalShortcut.unregisterAll(); youtube?.close(); cancelPending('MicMix is closing.');
+  if (config) flushConfig();
+});
