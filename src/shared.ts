@@ -21,7 +21,7 @@ export interface MicMixBridge {
   getReport(): Promise<DeviceReport | null>;
   refreshDevices(): Promise<void>;
   onReport(callback: (report: DeviceReport) => void): () => void;
-  getConfig(): Promise<SetupConfig>;
+  getConfig(): Promise<SetupConfig & { appVersion: string }>;
   saveDevices(micLabel: string | null, monitorLabel: string | null): Promise<void>;
   completeSetup(): Promise<void>;
   assignPad(slot: number): Promise<void>;
@@ -30,6 +30,7 @@ export interface MicMixBridge {
   getIntegrations(): Promise<IntegrationStatus>;
   onIntegrations(callback: (status: IntegrationStatus) => void): () => void;
   openVbCableSite(): Promise<void>;
+  openDonation(): Promise<void>;
 }
 declare global {
   // Chromium supports these APIs; TypeScript 5.9's DOM declarations omit them.

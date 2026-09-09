@@ -4,3 +4,5 @@ artifacts/
 *.log
 build/vbcable/*
 !build/vbcable/.gitkeep
+!build/vbcable/README.txt
+release/

@@ -247,7 +247,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle('config:get', event => {
     if (!fromUi(event)) throw new Error('Unauthorized');
-    return { setupDone: config.setupDone, micLabel: config.micLabel, monitorLabel: config.monitorLabel };
+    return { setupDone: config.setupDone, micLabel: config.micLabel, monitorLabel: config.monitorLabel, appVersion: app.getVersion() };
   });
   ipcMain.handle('config:devices', (event, micLabel: string | null, monitorLabel: string | null) => {
     if (!fromUi(event)) throw new Error('Unauthorized');
@@ -262,6 +262,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('integrations:get', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return integrations; });
   ipcMain.handle('open:vbcable', event => {
     if (!fromUi(event)) throw new Error('Unauthorized');
+    return shell.openExternal('https://vb-audio.com/Cable/');
+  });
+  ipcMain.handle('open:donate', event => {
+    if (!fromUi(event)) throw new Error('Unauthorized');
+    // VB-CABLE is donationware; the download page carries VB-Audio's donate link.
     return shell.openExternal('https://vb-audio.com/Cable/');
   });
 

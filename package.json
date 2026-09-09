@@ -1,6 +1,6 @@
 {
   "name": "micmix",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Windows virtual microphone mixer",
   "main": "dist/main.cjs",
@@ -12,18 +12,58 @@
     "check:phase3": "npm run build && node scripts/start.mjs --smoke-phase3",
     "check:phase4": "npm run build && node scripts/start.mjs --smoke-phase4",
     "check:capture": "npm run build && node scripts/run-capture-probe.mjs",
-    "check:youtube": "npm run build && node scripts/run-capture-probe.mjs --youtube"
-  },
-  "dependencies": {
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "check:youtube": "npm run build && node scripts/run-capture-probe.mjs --youtube",
+    "dist:win": "npm run build && electron-builder --win nsis",
+    "pack:dir": "npm run build && electron-builder --dir"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "electron": "44.3.0",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.25.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "author": "MicMix",
+  "build": {
+    "appId": "com.micmix.desktop",
+    "productName": "MicMix",
+    "copyright": "MicMix. Bundles VB-CABLE (c) VB-Audio Software, included as donationware.",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/vbcable",
+        "to": "vbcable",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "MicMix-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
+      "license": "build/LICENSE-notice.txt",
+      "uninstallDisplayName": "MicMix ${version}",
+      "deleteAppDataOnUninstall": false
+    }
   }
 }

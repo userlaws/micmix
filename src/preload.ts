@@ -40,7 +40,8 @@ if (process.argv.includes('--audio-worker')) {
     clearPad: slot => ipcRenderer.invoke('pads:clear', slot),
     getIntegrations: () => ipcRenderer.invoke('integrations:get'),
     onIntegrations: subscribe<IntegrationStatus>('integrations:status'),
-    openVbCableSite: () => ipcRenderer.invoke('open:vbcable')
+    openVbCableSite: () => ipcRenderer.invoke('open:vbcable'),
+    openDonation: () => ipcRenderer.invoke('open:donate')
   };
   contextBridge.exposeInMainWorld('micmix', api);
 }

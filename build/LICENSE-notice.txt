@@ -1,0 +1,24 @@
+MicMix
+======
+
+MicMix turns one microphone into a full broadcast mix: your voice plus local
+music, YouTube and a soundboard, routed into Discord, FiveM and any Windows app
+through a virtual microphone.
+
+
+Included component: VB-CABLE (VB-Audio Virtual Cable)
+----------------------------------------------------
+
+The "MicMix Virtual Mic" is VB-CABLE, created by Vincent Burel / VB-Audio
+Software (https://vb-audio.com). VB-CABLE is DONATIONWARE: it is free to use,
+and if you find it useful you are asked to donate / pay a license to VB-Audio.
+
+  - VB-CABLE and VB-Audio are trademarks of VB-Audio Software.
+  - MicMix bundles only the standard VB-CABLE, unmodified, and installs it with
+    VB-Audio's own installer.
+  - Please support VB-Audio here:  https://vb-audio.com/Cable/
+
+This installer will install VB-CABLE for you and may ask you to restart Windows
+so the virtual microphone is detected by all applications.
+
+By continuing you agree to install VB-CABLE under VB-Audio's donationware terms.

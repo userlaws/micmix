@@ -36,7 +36,7 @@ function Mixer({ settings, change }: { settings: MixerSettings; change: (setting
 function App() {
   const [report, setReport] = useState<DeviceReport | null>(null);
   const [audio, setAudio] = useState(initialAudioState);
-  const [config, setConfig] = useState<SetupConfig | null>(null);
+  const [config, setConfig] = useState<(SetupConfig & { appVersion: string }) | null>(null);
   const [integrations, setIntegrations] = useState<IntegrationStatus>({ discord: false, fivem: false });
   const [error, setError] = useState('');
   const [micId, setMicId] = useState('');
@@ -177,6 +177,11 @@ function App() {
         <p><strong>Discord</strong> {integrations.discord ? '· running' : '· not detected'}: User Settings → Voice & Video → Input Device → <strong>CABLE Output (VB-Audio Virtual Cable)</strong>. Custom profile: Noise Suppression None, Echo Cancellation off, Automatic Gain Control off.</p>
         <p><strong>FiveM</strong> {integrations.fivem ? '· running' : '· not detected'}: Settings → Voice Chat → Input Device → <strong>CABLE Output (VB-Audio Virtual Cable)</strong>.</p>
         <small>Automatic Discord device switching needs a Discord-approved app and an online sign-in, so MicMix keeps this manual and never touches Discord's files.</small></div>
+      <div className="about"><h2>About MicMix{config?.appVersion ? ' ' + config.appVersion : ''}</h2>
+        <p>One microphone for your voice plus music, YouTube and a soundboard, routed into Discord, FiveM and any app through the MicMix Virtual Mic.</p>
+        <p>The virtual microphone is <strong>VB-CABLE</strong> by <strong>VB-Audio Software</strong>, included as donationware. If MicMix is useful, please support its author.</p>
+        <div className="wizard-actions"><button onClick={() => void window.micmix.openDonation()}>Donate to VB-Audio</button>
+          <button onClick={() => void window.micmix.openVbCableSite()}>vb-audio.com/Cable</button></div></div>
     </section>}
     <div className="workspace"><Mixer settings={audio.settings} change={change} />
       <section className={'panel music ' + (dragging ? 'dragging' : '')}
