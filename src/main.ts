@@ -13,7 +13,9 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.setName('MicMix');
 app.setAppUserModelId('com.micmix.desktop');
 const diagnose = process.argv.includes('--diagnose');
-const smokeTest = process.argv.includes('--smoke-phase1') || process.argv.includes('--smoke-phase2') || process.argv.includes('--smoke-phase3');
+// --smoke-<name> loads scripts/smoke-<name>.cjs in an isolated diagnostics profile.
+const smokeName = process.argv.map(arg => /^--smoke-([a-z0-9-]+)$/.exec(arg)?.[1]).find(Boolean);
+const smokeTest = smokeName !== undefined;
 // Diagnostics use their own cache so they can run beside the user's open app.
 if (diagnose || smokeTest) app.setPath('userData', path.join(app.getPath('temp'), 'micmix-diagnostics-' + process.pid));
 else if (!app.requestSingleInstanceLock()) app.quit();
@@ -220,7 +222,7 @@ app.whenReady().then(async () => {
     const deadline = Date.now() + 20000;
     while (!latest && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
     if (!latest) throw new Error('Smoke check timed out waiting for devices.');
-    const smoke = require(path.join(app.getAppPath(), 'scripts', process.argv.includes('--smoke-phase3') ? 'smoke-phase3.cjs' : process.argv.includes('--smoke-phase2') ? 'smoke-phase2.cjs' : 'smoke-phase1.cjs'));
+    const smoke = require(path.join(app.getAppPath(), 'scripts', 'smoke-' + smokeName + '.cjs'));
     await smoke(ui, worker, app.getAppPath(), registerFiles, youtube);
     app.quit();
   }

@@ -58,9 +58,11 @@ export interface MixerSettings {
 }
 export interface Meters { mic: number; music: number; soundboard: number; master: number; ducking: boolean; reduction: number; overload: boolean }
 export const defaultSettings: MixerSettings = {
-  levels: { mic: 1, music: 0.6, soundboard: 0.6, master: 0.8 },
+  // Full level by default; the limiter handles overload and the user trims with faders.
+  levels: { mic: 1, music: 1, soundboard: 1, master: 1 },
   muted: { mic: false, music: false, soundboard: false, master: false },
-  ducking: true, duckThreshold: -40, duckDb: -12,
+  // -30 dBFS RMS: a sensitive condenser in a normal room sits well below this; speech sits above it.
+  ducking: true, duckThreshold: -30, duckDb: -12,
   mono: false, monitor: true, monitorMic: false, monitorVolume: 0.7
 };
 export const emptyMeters: Meters = { mic: 0, music: 0, soundboard: 0, master: 0, ducking: false, reduction: 0, overload: false };

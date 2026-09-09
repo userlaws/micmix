@@ -165,7 +165,9 @@ function App() {
       <section className="panel soundboard"><div className="panel-heading"><h2>Soundboard</h2><span className="muted">PHASE 4</span></div><div className="pads">{Array.from({ length: 9 }, (_, i) => <button disabled key={i}>{String(i + 1).padStart(2, '0')}</button>)}</div><p>Local clips and global hotkeys arrive in Phase 4.</p></section>
     </div>
     <footer><span className={cable ? 'accent' : 'error-text'}>{cable ? '● Virtual Mic OK' : '● Virtual Mic missing'}</span><span>Discord: manual setup</span><span>FiveM: detection in Phase 4</span><span>{audio.settings.monitor ? 'Monitor: ' + (audio.settings.monitorMic ? 'music + mic' : 'music only') : 'Monitor off'}</span></footer>
-    <p className="checkpoint">Phase 3 checkpoint: paste a YouTube link, go LIVE, and press Play. Have a friend confirm video audio + your mic in Discord using <strong>CABLE Output</strong>. Turn MicMix monitoring off while using Discord’s mic test to avoid hearing music twice.</p>
+    <p className="checkpoint">Phase 3 checkpoint: paste a YouTube link, go LIVE, and press Play. Have a friend confirm video audio + your mic in Discord using <strong>CABLE Output</strong>.
+      In Discord’s <strong>Custom</strong> input profile set Noise Suppression to <strong>None</strong>, turn off Echo Cancellation and Automatic Gain Control, and drag Input Sensitivity fully left (or enable automatic) — otherwise Discord treats music as noise and gates it.
+      Turn MicMix monitoring off during Discord’s mic test: its playback reaches your mic and ducks the music.</p>
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<App />);

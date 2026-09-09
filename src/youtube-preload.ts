@@ -10,6 +10,9 @@ window.addEventListener('message', event => {
     if (data.event === 'onReady' || data.event === 'initialDelivery') {
       clearInterval(handshake);
       for (const name of ['onStateChange', 'onError']) post({ event: 'command', func: 'addEventListener', args: [name] });
+      // The player's own volume is independent of the muted webContents; the mixer owns loudness.
+      post({ event: 'command', func: 'unMute', args: [] });
+      post({ event: 'command', func: 'setVolume', args: [100] });
     }
     if (!['onReady', 'initialDelivery', 'infoDelivery', 'onStateChange', 'onError'].includes(data.event)) return;
     const info = data.info;
