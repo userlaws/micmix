@@ -1,4 +1,3 @@
-import { Background } from './components/Background';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { Integrations } from './components/Integrations';
@@ -8,8 +7,7 @@ import { Footer } from './components/Footer';
 
 export default function App() {
   return (
-    <div className="relative min-h-screen overflow-x-clip">
-      <Background />
+    <div className="min-h-screen overflow-x-clip">
       <Header />
       <main>
         <Hero />

@@ -1,5 +1,5 @@
 // Brand mark from the MicMix brand package (public/brand/micmix-mark.svg).
-export function LogoMark({ size = 40, className = '' }: { size?: number; className?: string }) {
+export function LogoMark({ size = 32, className = '' }: { size?: number; className?: string }) {
   return (
     <img
       src={import.meta.env.BASE_URL + 'brand/micmix-mark.svg'}
@@ -16,7 +16,7 @@ export function LogoMark({ size = 40, className = '' }: { size?: number; classNa
 
 export function Wordmark({ className = '' }: { className?: string }) {
   return (
-    <span className={`font-extrabold tracking-tight ${className}`}>
+    <span className={`font-semibold tracking-tight ${className}`}>
       <span className="text-white">Mic</span>
       <span className="text-gradient">Mix</span>
     </span>
