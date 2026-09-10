@@ -9,14 +9,16 @@ export function Support() {
         <div>
           <h2 className="text-3xl font-semibold tracking-tight">Support</h2>
           <p className="mt-3 text-mist">
-            Most problems come down to one of these answers. If yours is not here, email us and say
-            which app you are using and what you hear.
+            Most problems come down to one of these answers. If yours is not here, open an issue on
+            GitHub and say which app you are using and what you hear.
           </p>
           <a
-            href={`mailto:${site.supportEmail}`}
+            href={site.issuesUrl}
+            target="_blank"
+            rel="noreferrer"
             className="mt-6 inline-block text-sm text-white underline underline-offset-4 hover:text-accent"
           >
-            {site.supportEmail}
+            Report a problem on GitHub
           </a>
         </div>
 

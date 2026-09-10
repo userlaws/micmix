@@ -24,6 +24,7 @@ export function Footer() {
           <nav className="flex flex-wrap items-center gap-5" aria-label="Footer">
             <a className="hover:text-white" href="#support">Support</a>
             <a className="hover:text-white" href={site.releasesUrl} target="_blank" rel="noreferrer">Releases</a>
+            <a className="hover:text-white" href={site.repoUrl} target="_blank" rel="noreferrer">GitHub</a>
             <a className="hover:text-white" href={site.vbAudioUrl} target="_blank" rel="noreferrer">
               VB-CABLE by VB-Audio
             </a>

@@ -16,7 +16,8 @@ export const site = {
   // "Download for Windows" always points at the newest GitHub Release asset, so every release is live at once.
   downloadUrl: import.meta.env?.VITE_DOWNLOAD_URL || 'https://github.com/userlaws/micmix/releases/latest/download/MicMix-Setup.exe',
   releasesUrl: import.meta.env?.VITE_RELEASES_URL || 'https://github.com/userlaws/micmix/releases',
-  supportEmail: 'aracenajake@gmail.com',
+  issuesUrl: 'https://github.com/userlaws/micmix/issues',
+  repoUrl: 'https://github.com/userlaws/micmix',
   donateUrl: 'https://shop.vb-audio.com/en/win-apps/11-vb-cable.html',
   vbAudioUrl: 'https://vb-audio.com/Cable/',
 };
