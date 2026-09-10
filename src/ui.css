@@ -164,6 +164,11 @@ header { display: flex; align-items: center; justify-content: space-between; gap
   font-size: 13px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
 }
 .select select:disabled { opacity: 0.55; }
+/* The open list is painted by Chromium from the select's own colours, so it needs opaque theme values. */
+.select select { background-color: #161f33; }
+.select select option, .select select optgroup { background: #101a30; color: var(--text); font: inherit; }
+.select select option:checked { background: rgba(20, 120, 255, 0.35); color: #fff; }
+.select select option:disabled { color: var(--text-3); }
 .select .icon { position: absolute; right: 11px; top: 50%; transform: translateY(-50%); color: var(--text-3); pointer-events: none; }
 .field { display: flex; align-items: center; gap: 8px; padding-right: 12px; }
 .field .dot { width: 8px; height: 8px; }
