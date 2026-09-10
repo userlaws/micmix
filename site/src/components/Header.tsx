@@ -35,13 +35,16 @@ export function Header() {
     return () => mq.removeEventListener('change', onChange);
   }, []);
 
+  const floating = scrolled || open;
   return (
-    <header
-      className={`fixed inset-x-0 top-0 z-50 border-b bg-ink/90 backdrop-blur transition-colors ${
-        scrolled || open ? 'border-line' : 'border-transparent'
-      }`}
-    >
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
+    <header className="fixed inset-x-0 top-0 z-50 px-3 pt-3 sm:px-5">
+      <div
+        className={`mx-auto flex h-14 items-center justify-between border px-4 transition-[max-width,background-color,border-color,box-shadow,border-radius] duration-500 ease-[cubic-bezier(.2,.8,.2,1)] ${
+          floating
+            ? 'max-w-3xl rounded-2xl border-white/10 bg-ink/70 shadow-[0_12px_40px_-16px_rgb(0_0_0/0.8)] backdrop-blur-xl backdrop-saturate-150 sm:rounded-full'
+            : 'max-w-6xl rounded-full border-transparent bg-transparent'
+        }`}
+      >
         <a href="#home" className="flex items-center gap-2.5" aria-label="MicMix home">
           <LogoMark size={28} />
           <Wordmark className="text-lg" />
@@ -65,7 +68,7 @@ export function Header() {
             aria-expanded={open}
             aria-controls="mobile-nav"
             aria-label={open ? 'Close menu' : 'Open menu'}
-            className="inline-flex size-9 items-center justify-center rounded-md border border-line text-white md:hidden"
+            className="inline-flex size-9 items-center justify-center rounded-full border border-line text-white md:hidden"
           >
             {open ? <X className="size-5" /> : <Menu className="size-5" />}
           </button>
@@ -73,16 +76,24 @@ export function Header() {
       </div>
 
       {open && (
-        <nav id="mobile-nav" aria-label="Mobile" className="border-t border-line bg-ink px-5 py-3 md:hidden">
+        <nav
+          id="mobile-nav"
+          aria-label="Mobile"
+          className="mx-auto mt-2 max-w-3xl rounded-2xl border border-white/10 bg-ink/75 px-3 py-2 shadow-[0_12px_40px_-16px_rgb(0_0_0/0.8)] backdrop-blur-xl backdrop-saturate-150 md:hidden"
+        >
           <ul className="flex flex-col">
             {NAV.map((item) => (
               <li key={item.id}>
-                <a href={item.href} onClick={() => setOpen(false)} className="block py-3 text-base text-white">
+                <a
+                  href={item.href}
+                  onClick={() => setOpen(false)}
+                  className="block rounded-xl px-3 py-3 text-base text-white hover:bg-white/5"
+                >
                   {item.label}
                 </a>
               </li>
             ))}
-            <li className="pb-2 pt-3">
+            <li className="p-2 pt-3">
               <DownloadButton className="w-full" onClick={() => setOpen(false)} />
             </li>
           </ul>
