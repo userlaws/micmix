@@ -453,3 +453,7 @@ input[type=range].thin::-webkit-slider-thumb { width: 14px; height: 14px; margin
 ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.24); background-clip: padding-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
+.strip-name { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.strip-flag { font-size: 11px; font-weight: 400; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color 120ms; }
+.strip-flag.on { color: var(--amber); }
+.sample-rates small { line-height: 1.45; }

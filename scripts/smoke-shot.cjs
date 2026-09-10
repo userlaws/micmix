@@ -18,6 +18,9 @@ module.exports = async function smoke(ui, worker, root) {
   const layout = await evalUi(`({ scrollHeight: document.documentElement.scrollHeight, innerHeight: window.innerHeight, innerWidth: window.innerWidth })`);
   await writeFile(path.join(shots, 'shot-main.png'), (await ui.webContents.capturePage()).toPNG());
   await evalUi(`document.querySelector('.gear').click()`);
+  // The Sample rates row reads the Windows registry through main; wait for it so the screenshot shows real values.
+  for (let i = 0; i < 50 && (await evalUi(`document.querySelector('.sample-rates .val')?.textContent`)) === 'unknown'; i++) await sleep(100);
+  console.log('Sample rates row:', await evalUi(`document.querySelector('.sample-rates')?.innerText`));
   await sleep(300);
   await writeFile(path.join(shots, 'shot-settings.png'), (await ui.webContents.capturePage()).toPNG());
   await evalUi(`document.querySelector('.about').scrollIntoView({ block: 'end' })`);

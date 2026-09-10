@@ -20,7 +20,8 @@ module.exports = async function smoke(ui, worker, root) {
     const text = document.querySelector('.about')?.textContent || '';
     return { heading: heading?.textContent || '', buttons, mentionsVbAudio: /VB-Audio/.test(text), mentionsVbCable: /VB-CABLE/.test(text) };
   })()`);
-  assert.match(about.heading, /About MicMix 1\.0\.0/, 'About shows app version: ' + about.heading);
+  const version = require(path.join(root, 'package.json')).version;
+  assert.equal(about.heading, 'About MicMix ' + version, 'About shows app version: ' + about.heading);
   assert.ok(about.mentionsVbAudio && about.mentionsVbCable, 'About credits VB-CABLE / VB-Audio');
   assert.ok(about.buttons.some(b => /Donate/i.test(b)), 'Donation button present: ' + JSON.stringify(about.buttons));
   await mkdir(path.join(root, 'artifacts'), { recursive: true });

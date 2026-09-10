@@ -11,6 +11,7 @@
     "check:phase2": "npm run build && node scripts/check-phase2.mjs",
     "check:phase3": "npm run build && node scripts/start.mjs --smoke-phase3",
     "check:phase4": "npm run build && node scripts/start.mjs --smoke-phase4",
+    "check:loopback": "npm run build && node scripts/check-loopback.mjs",
     "check:capture": "npm run build && node scripts/run-capture-probe.mjs",
     "check:youtube": "npm run build && node scripts/run-capture-probe.mjs --youtube",
     "check:youtube-search": "npm run build && node scripts/check-youtube-search.mjs",

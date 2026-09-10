@@ -75,5 +75,38 @@ export async function run() {
   results.limitedSteadyPeak = peak(limited.getChannelData(0).subarray(12000));
   assert(results.limitedSteadyPeak < 1, 'Steady overload exceeds full scale');
   results.limitedTransientPeak = peak(limited.getChannelData(0));
+  // Voice headroom: a quiet voice (1 kHz at -26 dBFS) under music summing to +9.5 dBFS (as a hot mic plus full music does) must survive unchanged when the
+  // voice has its own limiter, and is measurably squashed when it shares the music's limiter.
+  async function voiceUnderMusic(voiceHeadroom: boolean, musicLevel: number) {
+    const c = new OfflineAudioContext(1, 96000, 48000);
+    const st = structuredClone(defaultSettings);
+    st.levels = { mic: 1, music: 1, soundboard: 1, master: 1 }; st.ducking = false; st.voiceHeadroom = voiceHeadroom;
+    const g = createMixerGraph(c, st);
+    const voice = c.createOscillator(); voice.frequency.value = 1000;
+    const voiceGain = c.createGain(); voiceGain.gain.value = 0.05; voice.connect(voiceGain); voiceGain.connect(g.mic);
+    const bed = c.createOscillator(); bed.frequency.value = 50;
+    const bedGain = c.createGain(); bedGain.gain.value = musicLevel; bed.connect(bedGain); bedGain.connect(g.music);
+    g.virtualOut.connect(c.destination); voice.start(); bed.start();
+    const data = (await c.startRendering()).getChannelData(0).subarray(48000);
+    // Goertzel at 1 kHz: amplitude of the voice tone in the output.
+    const w = 2 * Math.PI * 1000 / 48000; let s0 = 0, s1 = 0, s2 = 0;
+    for (const x of data) { s0 = x + 2 * Math.cos(w) * s1 - s2; s2 = s1; s1 = s0; }
+    return 2 * Math.sqrt(s1 * s1 + s2 * s2 - 2 * Math.cos(w) * s1 * s2) / data.length;
+  }
+  results.voiceAloneHeadroom = await voiceUnderMusic(true, 0);
+  results.voiceAloneShared = await voiceUnderMusic(false, 0);
+  results.voiceUnderMusicHeadroom = await voiceUnderMusic(true, 3);
+  results.voiceUnderMusicShared = await voiceUnderMusic(false, 3);
+  // Music at the ducked level (-8 dB below a full-scale peak) is the everyday case: the voice must pass untouched.
+  results.voiceUnderDuckedMusicHeadroom = await voiceUnderMusic(true, 0.35);
+  // Chromium's DynamicsCompressor adds a fixed ~0.6 dB makeup gain below threshold on every path, so the headroom
+  // path must match the shared path exactly rather than the raw 0.05 input.
+  assert(Math.abs(results.voiceAloneHeadroom - results.voiceAloneShared) < 0.001 && results.voiceAloneHeadroom > 0.045 && results.voiceAloneHeadroom < 0.06,
+    'Voice headroom path is not transparent: ' + results.voiceAloneHeadroom + ' vs shared ' + results.voiceAloneShared);
+  // Under an extreme +9.5 dBFS bed the peak guard still clips the summed peaks (the voice cannot fit above music that
+  // already sits at the ceiling), but the voice must survive far better than through the shared limiter.
+  assert(Math.abs(results.voiceUnderDuckedMusicHeadroom - results.voiceAloneHeadroom) < 0.001, 'Voice headroom altered the voice under ducked music: ' + results.voiceUnderDuckedMusicHeadroom);
+  assert(results.voiceUnderMusicHeadroom > 0.025, 'Voice headroom did not protect the voice under loud music: ' + JSON.stringify({ alone: results.voiceAloneHeadroom, headroom: results.voiceUnderMusicHeadroom, shared: results.voiceUnderMusicShared }));
+  assert(results.voiceUnderMusicShared < results.voiceUnderMusicHeadroom / 2.5, 'Shared limiter unexpectedly left the voice intact: ' + JSON.stringify({ headroom: results.voiceUnderMusicHeadroom, shared: results.voiceUnderMusicShared }));
   return results;
 }

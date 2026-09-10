@@ -9,6 +9,7 @@ import { validCommand } from './commands';
 import { validAccelerator } from './hotkeys';
 import { loadConfig, saveConfig } from './config';
 import { integrationStatus } from './processes';
+import { readEndpointFormats } from './audio-formats';
 import { checkForUpdates, installUpdate, updateStatus, onUpdateStatus, updatesSupported } from './updates';
 import { youtubeInput } from './youtube-url';
 import { YouTubeView } from './youtube-view';
@@ -289,6 +290,7 @@ app.whenReady().then(async () => {
     config.setupDone = true; flushConfig();
   });
   ipcMain.handle('integrations:get', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return integrations; });
+  ipcMain.handle('devices:formats', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return readEndpointFormats(); });
   ipcMain.handle('update:get', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return updateStatus(); });
   ipcMain.handle('update:supported', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return updatesSupported; });
   ipcMain.handle('update:check', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return checkForUpdates(); });
@@ -362,8 +364,9 @@ app.whenReady().then(async () => {
     if (diagnose) {
       clearTimeout(timeout);
       void mkdir(path.join(app.getAppPath(), 'artifacts'), { recursive: true })
-        .then(() => writeFile(path.join(app.getAppPath(), 'artifacts', 'devices.json'),
-          JSON.stringify({ versions: process.versions, ...report, cableInput, cableOutput }, null, 2)))
+        .then(() => readEndpointFormats())
+        .then(formats => writeFile(path.join(app.getAppPath(), 'artifacts', 'devices.json'),
+          JSON.stringify({ versions: process.versions, ...report, cableInput, cableOutput, windowsFormats: formats }, null, 2)))
         .then(() => app.exit(report.error ? 1 : cableInput && cableOutput ? 0 : 2))
         .catch(error => { console.error(error); app.exit(1); });
     }

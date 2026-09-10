@@ -7,6 +7,13 @@ export const PAD_COUNT = 9;
 export interface SoundPad { slot: number; id: string; title: string; url: string; hotkey: string | null }
 export interface PadState extends SoundPad { ready: boolean; error: string | null }
 export interface IntegrationStatus { discord: boolean; fivem: boolean }
+// Shared-mode format Windows runs an endpoint at (read from the registry in main; Web Audio cannot see it).
+export interface EndpointFormat {
+  flow: 'render' | 'capture'; name: string; device: string; label: string;
+  sampleRate: number; channels: number; bits: number;
+}
+// Rates the live engine actually runs at, so a mismatch with Windows is visible in Diagnostics.
+export interface EngineInfo { sampleRate: number; micSampleRate: number | null; micChannels: number | null }
 export interface SetupConfig { setupDone: boolean; micLabel: string | null; monitorLabel: string | null; updateCheck: boolean }
 export type UpdateStatus =
   | { phase: 'idle' } | { phase: 'checking' }
@@ -38,6 +45,7 @@ export interface MicMixBridge {
   setPadHotkey(slot: number, hotkey: string | null): Promise<void>;
   clearPad(slot: number): Promise<void>;
   getIntegrations(): Promise<IntegrationStatus>;
+  getEndpointFormats(): Promise<EndpointFormat[]>;
   onIntegrations(callback: (status: IntegrationStatus) => void): () => void;
   downloadVbCable(): Promise<void>;
   openVbCableSite(): Promise<void>;
@@ -80,7 +88,7 @@ export interface AudioState {
   status: 'off' | 'starting' | 'live'; micId: string | null; tone: boolean; error: string | null;
   monitorId: string | null; queue: LocalTrack[]; index: number; playing: boolean; buffering: boolean;
   position: number; duration: number; settings: MixerSettings;
-  pads: (PadState | null)[]; activePads: number[];
+  pads: (PadState | null)[]; activePads: number[]; engine: EngineInfo | null;
 }
 export interface LocalTrack { id: string; title: string; url: string; youtubeId?: string }
 export interface YouTubeResult {
@@ -95,8 +103,14 @@ export interface MixerSettings {
   levels: Record<Channel, number>; muted: Record<Channel, boolean>;
   ducking: boolean; duckThreshold: number; duckDb: number;
   mono: boolean; monitor: boolean; monitorMic: boolean; monitorVolume: number; monitorMusicVolume: number;
+  // voiceHeadroom: the mic gets its own limiter beside the shared one, so loud music never modulates speech.
+  voiceHeadroom: boolean;
 }
-export interface Meters { mic: number; music: number; soundboard: number; master: number; ducking: boolean; reduction: number; overload: boolean }
+export interface Meters {
+  mic: number; music: number; soundboard: number; master: number; ducking: boolean; reduction: number; overload: boolean;
+  // dB of gain reduction currently applied to the voice (its own limiter with headroom on; the shared one while the mic is active otherwise).
+  voiceReduction: number;
+}
 export const defaultSettings: MixerSettings = {
   // Full level by default; the limiter handles overload and the user trims with faders.
   levels: { mic: 1, music: 1, soundboard: 1, master: 1 },
@@ -105,13 +119,14 @@ export const defaultSettings: MixerSettings = {
   // -8 dB duck: music stays present under your voice; still adjustable in Settings.
   ducking: true, duckThreshold: -30, duckDb: -8,
   // monitorMusicVolume scales music/pads in YOUR headphones only, never the outgoing mix.
-  mono: false, monitor: true, monitorMic: false, monitorVolume: 0.7, monitorMusicVolume: 1
+  mono: false, monitor: true, monitorMic: false, monitorVolume: 0.7, monitorMusicVolume: 1,
+  voiceHeadroom: true
 };
-export const emptyMeters: Meters = { mic: 0, music: 0, soundboard: 0, master: 0, ducking: false, reduction: 0, overload: false };
+export const emptyMeters: Meters = { mic: 0, music: 0, soundboard: 0, master: 0, ducking: false, reduction: 0, overload: false, voiceReduction: 0 };
 export function initialAudioState(): AudioState {
   return { status: 'off', micId: null, monitorId: null, tone: false, error: null,
     queue: [], index: -1, playing: false, buffering: false, position: 0, duration: 0,
-    settings: structuredClone(defaultSettings), pads: Array.from({ length: PAD_COUNT }, () => null), activePads: [] };
+    settings: structuredClone(defaultSettings), pads: Array.from({ length: PAD_COUNT }, () => null), activePads: [], engine: null };
 }
 export const CABLE_INPUT = /CABLE Input/i;
 export const CABLE_OUTPUT = /CABLE Output/i;

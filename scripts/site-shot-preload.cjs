@@ -23,13 +23,13 @@ const state = {
     levels: { mic: 1, music: 0.72, soundboard: 0.85, master: 1 },
     muted: { mic: false, music: false, soundboard: false, master: false },
     ducking: true, duckThreshold: -30, duckDb: -8,
-    mono: false, monitor: true, monitorMic: false, monitorVolume: 0.7, monitorMusicVolume: 1,
+    mono: false, monitor: true, monitorMic: false, monitorVolume: 0.7, monitorMusicVolume: 1, voiceHeadroom: true,
   },
   pads: [pad(0, 'Airhorn', 'Ctrl+Shift+F1'), pad(1, 'Applause', 'Ctrl+Shift+F2'), pad(2, 'Bruh', 'Ctrl+Shift+F3'),
     pad(3, 'Drum roll', 'Ctrl+Shift+F4'), pad(4, 'Laugh track', null), pad(5, 'Trombone', null), null, null, null],
   activePads: [],
 };
-const meters = { mic: 0.62, music: 0.48, soundboard: 0.0, master: 0.71, ducking: true, reduction: 4.2, overload: false };
+const meters = { mic: 0.62, music: 0.48, soundboard: 0.0, master: 0.71, ducking: true, reduction: 4.2, overload: false, voiceReduction: 0 };
 const noop = () => () => {};
 const ok = () => Promise.resolve();
 

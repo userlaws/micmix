@@ -69,6 +69,32 @@ warning in MicMix: pull the **Master** (and the loudest source) fader down until
 it stops. In Discord, keep **Automatic Gain Control off**. If only your voice is
 robotic, lower the **Mic** fader so voice and music don't both slam the limiter.
 
+**My voice sounds boxy, muffled or squashed (especially in FiveM).**
+Check three things, in order.
+
+1. **Is the limiter working on your voice?** Watch the small line under the **Mic**
+   fader while you talk. If it says **Limiting your voice**, the mic is hitting the
+   ceiling: turn your microphone's own gain knob down, or lower the **Mic** fader,
+   until the line stays quiet. A compressed voice sounds flat and "in a box".
+2. **Voice headroom** (Settings → Monitoring & output, on by default) gives your
+   voice its own limiter, so loud music can never pump or squash your words. It
+   works best with ducking on; if **Peak guard active** appears while both are
+   loud, lower the Music fader a little.
+3. **Sample rates** (Settings → Diagnostics) lists the rate Windows runs your mic,
+   CABLE Input and CABLE Output at, plus the MicMix engine when live. If they
+   differ, Windows resamples between them. Set each device to **48000 Hz** in
+   Windows Settings → System → Sound → device → **Format**.
+
+Everything after CABLE Output belongs to the voice app. Discord sends about
+64 kbps Opus. FiveM sends voice through Mumble at a bitrate the **server** picks,
+and with the common `voice_useNativeAudio` setup proximity voice is played back
+inside the game engine with distance and room effects, so it always sounds more
+"in the world" than Discord. In FiveM Settings → Voice Chat set **Input Device →
+CABLE Output**, turn off any noise-suppression option your build shows, and set
+the mic sensitivity low enough that quiet music still passes. `npm run
+check:loopback` measures the MicMix → VB-CABLE path end to end if you want proof
+that the app itself is transparent.
+
 **I hear the music twice / an echo.**
 Two playback paths are open at once — usually MicMix's **Headphone monitor**
 plus Discord's **Mic Test** (or Discord routing its own input back to you). Turn

@@ -49,7 +49,7 @@ export function stop(error: string | null = null) {
   disposeMusic();
   clearInterval(timer);
   if (graph) {
-    for (const node of [graph.master, graph.monitorOut]) {
+    for (const node of [graph.master, graph.voiceMaster, graph.monitorOut]) {
       node.gain.cancelScheduledValues(0); node.gain.value = 0; node.disconnect();
     }
     graph.virtualOut.disconnect();
@@ -62,7 +62,7 @@ export function stop(error: string | null = null) {
   const previousContexts = [context, monitorContext];
   context = monitorContext = null; sinkId = null;
   for (const previous of previousContexts) if (previous && previous.state !== 'closed') void previous.close().catch(() => {});
-  publish({ status: 'off', micId: null, monitorId: null, tone: false, playing: false, buffering: false, position, error });
+  publish({ status: 'off', micId: null, monitorId: null, tone: false, playing: false, buffering: false, position, error, engine: null });
   window.audioHost.meters(emptyMeters);
 }
 export function checkDevices(devices: AudioDevice[]) {
@@ -141,7 +141,11 @@ async function start(deviceId: string, monitorId?: string) {
       if (operation === epoch) deviceFailure('Microphone disconnected. Reconnect it and rescan devices.');
     }));
     // Catch a device disappearing during asynchronous setup too.
-    publish({ status: 'live', monitorId: monitorId || null, error: null });
+    // Real engine rates for Diagnostics: Chromium resamples the mic to the context rate, and Windows resamples
+    // the context to whatever it runs CABLE Input at, so both are reported beside the Windows endpoint formats.
+    const micSettings = acquired.getAudioTracks()[0]?.getSettings() as (MediaTrackSettings & { sampleRate?: number; channelCount?: number }) | undefined;
+    publish({ status: 'live', monitorId: monitorId || null, error: null,
+      engine: { sampleRate: ctx.sampleRate, micSampleRate: micSettings?.sampleRate ?? null, micChannels: micSettings?.channelCount ?? null } });
     checkDevices(await navigator.mediaDevices.enumerateDevices() as AudioDevice[]);
     current();
     if (state.index >= 0) loadTrack(state.index, false, state.position);

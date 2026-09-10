@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
-import { initialAudioState, emptyMeters, cablePresent, type DeviceReport, type AudioCommand, type MixerSettings, type Channel, type SetupConfig, type IntegrationStatus, type Meters, type UpdateStatus } from './shared';
+import { initialAudioState, emptyMeters, cablePresent, CABLE_INPUT, CABLE_OUTPUT, type DeviceReport, type AudioCommand, type MixerSettings, type Channel, type SetupConfig, type IntegrationStatus, type Meters, type UpdateStatus, type EndpointFormat, type EngineInfo } from './shared';
 import { microphoneChoices, playbackChoices } from './devices';
 import { Soundboard } from './soundboard-panel';
 import { YouTubePanel } from './youtube-panel';
@@ -16,12 +16,12 @@ const CHANNEL_META: Record<Channel, { name: string; icon: 'mic' | 'music' | 'gri
   mic: { name: 'Mic', icon: 'mic' }, music: { name: 'Music', icon: 'music' }, soundboard: { name: 'Pads', icon: 'grid' }, master: { name: 'Master', icon: 'waves' },
 };
 
-function Strip({ channel, settings, change, peak }: { channel: Channel; settings: MixerSettings; change: (settings: MixerSettings) => void; peak: number }) {
+function Strip({ channel, settings, change, peak, flag }: { channel: Channel; settings: MixerSettings; change: (settings: MixerSettings) => void; peak: number; flag?: { text: string; title: string; on: boolean } }) {
   const meta = CHANNEL_META[channel];
   const muted = settings.muted[channel];
   return <div className={'strip ' + channel}>
     <div className="strip-icon"><Icon name={meta.icon} size={20} /></div>
-    <span className="strip-name">{meta.name}</span>
+    <span className="strip-name">{meta.name}{flag && <small className={'strip-flag' + (flag.on ? ' on' : '')} title={flag.title}>{flag.text}</small>}</span>
     <output htmlFor={'fader-' + channel}>{Math.round(settings.levels[channel] * 100)}%</output>
     <button className={'btn icon ' + (muted ? 'on' : '')} aria-label={(muted ? 'Unmute ' : 'Mute ') + meta.name} aria-pressed={muted}
       onClick={() => change({ ...settings, muted: { ...settings.muted, [channel]: !muted } })}><Icon name={muted ? 'speakerOff' : 'speaker'} /></button>
@@ -31,9 +31,14 @@ function Strip({ channel, settings, change, peak }: { channel: Channel; settings
   </div>;
 }
 function Mixer({ settings, change, meters }: { settings: MixerSettings; change: (settings: MixerSettings) => void; meters: Meters }) {
+  // The voice light answers "is the limiter touching my voice right now?", the usual cause of a squashed, boxy mic.
+  const voiceDb = Math.abs(meters.voiceReduction);
+  const voiceFlag = voiceDb >= 0.5 ? { text: 'Limiting voice · ' + voiceDb.toFixed(1) + ' dB', title: 'The limiter is squashing your voice right now. Lower the Mic fader or your microphone gain until this stays off.', on: true }
+    : settings.voiceHeadroom ? { text: 'Voice headroom on', title: 'Your voice has its own limiter; loud music cannot pump or squash it.', on: false }
+    : { text: 'Shared limiter', title: 'Your voice shares one limiter with the music. Turn on Voice headroom in Settings to separate them.', on: false };
   return <section className="card mixer">
     <div className="card-head"><div><h2>Mixer</h2><div className="sub">Balance your audio sources</div></div></div>
-    {(['mic', 'music', 'soundboard'] as Channel[]).map(channel => <Strip key={channel} channel={channel} settings={settings} change={change} peak={meters[channel]} />)}
+    {(['mic', 'music', 'soundboard'] as Channel[]).map(channel => <Strip key={channel} channel={channel} settings={settings} change={change} peak={meters[channel]} flag={channel === 'mic' ? voiceFlag : undefined} />)}
     <div className={'duck-row ' + (meters.ducking ? 'active' : '')}>
       <Icon name="duck" size={22} />
       <div className="duck-text" style={{ flex: 1 }}><b>Duck music while talking</b>
@@ -51,6 +56,25 @@ function Wave({ level, live }: { level: number; live: boolean }) {
   return <div className="wave" aria-hidden="true">{shape.map((factor, i) => <i key={i} style={{ '--h': (live ? Math.max(3, 4 + level * 42 * factor) : 3) + 'px' } as React.CSSProperties} />)}</div>;
 }
 
+function SampleRates({ formats, micLabel, engine }: { formats: EndpointFormat[]; micLabel: string | null; engine: EngineInfo | null }) {
+  const find = (flow: EndpointFormat['flow'], test: (f: EndpointFormat) => boolean) => formats.find(f => f.flow === flow && test(f));
+  const rows = [
+    { name: 'Microphone', format: micLabel ? find('capture', f => f.label === micLabel) ?? find('capture', f => micLabel.startsWith(f.label)) ?? find('capture', f => !!f.device && micLabel.includes(f.device)) : undefined },
+    { name: 'CABLE Input', format: find('render', f => CABLE_INPUT.test(f.label)) },
+    { name: 'CABLE Output', format: find('capture', f => CABLE_OUTPUT.test(f.label)) },
+  ];
+  const known = rows.filter(r => r.format).map(r => r.format!.sampleRate);
+  if (engine) known.push(engine.sampleRate);
+  const status = !known.length ? 'unknown' : new Set(known).size > 1 ? 'mismatch' : 'aligned';
+  const hz = (n: number) => n.toLocaleString() + ' Hz';
+  return <div className="row col sample-rates"><div className="row-top"><span>Sample rates</span><span className={'val ' + (status === 'mismatch' ? 'error-text' : status === 'aligned' ? 'accent' : '')}>{status}</span></div>
+    <small>{rows.map(r => r.name + ' ' + (r.format ? hz(r.format.sampleRate) + ' ' + r.format.bits + '-bit' : 'unknown')).join(' · ')}
+      {engine ? ' · MicMix engine ' + hz(engine.sampleRate) + (engine.micSampleRate ? ' (mic captured at ' + hz(engine.micSampleRate) + ')' : '') : ' · MicMix engine: go live to read'}</small>
+    {status === 'mismatch'
+      ? <small className="error-text">Windows resamples between different rates, which softens audio. Set every device above to the same rate (48000 Hz recommended): Windows Settings → System → Sound → choose the device → Format.</small>
+      : <small>These are the rates Windows runs each device at. Matching rates mean nothing is resampled between MicMix and your voice app.</small>}
+  </div>;
+}
 const mb = (bytes: number) => (bytes / 1048576).toFixed(bytes >= 104857600 ? 0 : 1) + ' MB';
 const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 function updateSummary(status: UpdateStatus, current: string, supported: boolean): string {
@@ -103,6 +127,7 @@ function App() {
   const [browsingYouTube, setBrowsingYouTube] = useState(false);
   const [source, setSource] = useState<'youtube' | 'local'>('youtube');
   const [wizard, setWizard] = useState(false);
+  const [formats, setFormats] = useState<EndpointFormat[]>([]);
   const wizardDecided = useRef(false);
   const videoSlot = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -120,6 +145,10 @@ function App() {
     void window.micmix.getConfig().then(setConfig).catch(e => setError(String(e)));
     return () => { offState(); offReport(); offIntegrations(); offMeters(); offUpdate(); };
   }, []);
+  useEffect(() => {
+    if (!settingsOpen) return;
+    void window.micmix.getEndpointFormats().then(setFormats).catch(() => {});
+  }, [settingsOpen, report]);
   const microphones = microphoneChoices(report?.devices ?? []);
   const playbacks = playbackChoices(report?.devices ?? []);
   const cable = !!report && cablePresent(report.devices);
@@ -314,12 +343,14 @@ function App() {
             <div className="row col"><div className="row-top"><span>Music in my headphones</span><span className="val">{Math.round(s.monitorMusicVolume * 100)}%</span></div>
               <input className="thin" aria-label="Music in my headphones" type="range" min="0" max="1" step="0.01" value={s.monitorMusicVolume} style={pct(s.monitorMusicVolume)} onChange={e => change({ ...s, monitorMusicVolume: Number(e.target.value) })} />
               <small>Listeners always hear music at the Music/Master level; this only changes how loud it is for you.</small></div>
+            <div className="row"><div className="row-label"><span>Voice headroom</span><small>Your voice gets its own limiter, so loud music never pumps or squashes it. Best with ducking on; keep the Mic meter out of the red.</small></div><Switch checked={s.voiceHeadroom} onChange={voiceHeadroom => change({ ...s, voiceHeadroom })} label="Voice headroom" /></div>
             <div className="row"><div className="row-label"><span>Mono virtual microphone</span><small>Safer for voice apps that expect one channel</small></div><Switch checked={s.mono} onChange={mono => change({ ...s, mono })} label="Mono virtual microphone output" /></div>
           </div>
           <div className="group"><h2>Diagnostics</h2>
             <div className="row"><div className="row-label"><span>Test tone</span><small>1.5 s at 440 Hz into the virtual mic</small></div>
               <button className="btn" disabled={!live || audio.tone || busy} onClick={() => void send({ type: 'tone' })}>{audio.tone ? 'Sending tone…' : 'Send test tone'}</button></div>
             <div className="row"><div className="row-label"><span>Rescan devices</span></div><button className="btn" onClick={() => void window.micmix.refreshDevices().catch(e => setError(String(e)))}><Icon name="refresh" size={16} />Rescan</button></div>
+            <SampleRates formats={formats} micLabel={microphones.find(d => d.deviceId === micId)?.label ?? null} engine={audio.engine} />
             <div className="row"><div className="row-label"><span>Updates</span><small>{updateSummary(update, config?.appVersion ?? '', updatesSupported)}</small></div>
               {update.phase === 'downloaded' ? <button className="btn primary" onClick={() => void window.micmix.installUpdate().catch(e => setError(String(e)))}><Icon name="refresh" size={16} />Restart to update</button>
               : <button className="btn" disabled={!updatesSupported || update.phase === 'checking' || update.phase === 'downloading' || update.phase === 'installing'} onClick={() => void window.micmix.checkForUpdates().catch(e => setError(String(e)))}><Icon name="refresh" size={16} />{update.phase === 'checking' ? 'Checking…' : 'Check now'}</button>}</div>
@@ -332,7 +363,8 @@ function App() {
             <div className="row col"><div className="row-top"><strong>Discord</strong><span className={'val ' + (integrations.discord ? 'accent' : '')}>{integrations.discord ? 'running' : 'not detected'}</span></div>
               <p>User Settings → Voice & Video → Input Device → <strong>CABLE Output (VB-Audio Virtual Cable)</strong>. Custom profile: Noise Suppression None, Echo Cancellation off, Automatic Gain Control off.</p></div>
             <div className="row col"><div className="row-top"><strong>FiveM</strong><span className={'val ' + (integrations.fivem ? 'accent' : '')}>{integrations.fivem ? 'running' : 'not detected'}</span></div>
-              <p>Settings → Voice Chat → Input Device → <strong>CABLE Output (VB-Audio Virtual Cable)</strong>.</p>
+              <p>Settings → Voice Chat → Input Device → <strong>CABLE Output (VB-Audio Virtual Cable)</strong>. Turn off any noise suppression option and set the mic sensitivity so quiet music still passes.</p>
+              <small>Proximity voice is played back inside the game with distance and room effects, and the server picks the voice bitrate, so it never sounds as direct as Discord. If the Mic strip shows "Limiting your voice", lower your mic gain first.</small>
               <small>Automatic Discord device switching needs a Discord-approved app and an online sign-in, so MicMix keeps this manual and never touches Discord's files.</small></div>
           </div>
           <div className="group span about"><h2>About MicMix{config?.appVersion ? ' ' + config.appVersion : ''}</h2>

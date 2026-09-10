@@ -6,7 +6,7 @@ export function validSettings(value: unknown): value is MixerSettings {
   return ['mic', 'music', 'soundboard', 'master'].every(key => {
     const k = key as keyof MixerSettings['levels'];
     return Number.isFinite(s.levels?.[k]) && s.levels[k] >= 0 && s.levels[k] <= 1 && typeof s.muted?.[k] === 'boolean';
-  }) && ['ducking', 'mono', 'monitor', 'monitorMic'].every(key => typeof s[key as keyof MixerSettings] === 'boolean') &&
+  }) && ['ducking', 'mono', 'monitor', 'monitorMic', 'voiceHeadroom'].every(key => typeof s[key as keyof MixerSettings] === 'boolean') &&
     Number.isFinite(s.duckThreshold) && s.duckThreshold >= -60 && s.duckThreshold <= -10 &&
     Number.isFinite(s.duckDb) && s.duckDb >= -30 && s.duckDb <= 0 &&
     Number.isFinite(s.monitorVolume) && s.monitorVolume >= 0 && s.monitorVolume <= 1 &&

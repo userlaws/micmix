@@ -41,6 +41,7 @@ if (process.argv.includes('--audio-worker')) {
     setPadHotkey: (slot, hotkey) => ipcRenderer.invoke('pads:hotkey', slot, hotkey),
     clearPad: slot => ipcRenderer.invoke('pads:clear', slot),
     getIntegrations: () => ipcRenderer.invoke('integrations:get'),
+    getEndpointFormats: () => ipcRenderer.invoke('devices:formats'),
     onIntegrations: subscribe<IntegrationStatus>('integrations:status'),
     downloadVbCable: () => ipcRenderer.invoke('download:vbcable'),
     openVbCableSite: () => ipcRenderer.invoke('open:vbcable'),

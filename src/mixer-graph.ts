@@ -19,7 +19,11 @@ export function createMixerGraph(context: BaseAudioContext, initial: MixerSettin
   const mic = context.createGain(), music = context.createGain(), soundboard = context.createGain();
   const master = context.createGain(), duck = context.createGain(), monitorMic = context.createGain();
   const monitorBus = context.createGain(), monitorLevel = context.createGain(), monitorMusic = context.createGain();
-  const compressor = limiter(context), monitorLimiter = limiter(context), mono = context.createGain();
+  // Voice headroom: the mic is routed either into the shared limiter with the music (micShared) or through
+  // its own limiter (micDirect -> voiceMaster -> voiceLimiter) that only reacts to the voice's own peaks,
+  // so loud music can never pump or squash speech. Both paths meet before the peak guard.
+  const micShared = context.createGain(), micDirect = context.createGain(), voiceMaster = context.createGain();
+  const compressor = limiter(context), voiceLimiter = limiter(context), monitorLimiter = limiter(context), mono = context.createGain();
   const guard = peakGuard(context), monitorGuard = peakGuard(context), overload = context.createAnalyser();
   overload.fftSize = 2048;
   const overloadSamples = new Float32Array(2048);
@@ -28,7 +32,9 @@ export function createMixerGraph(context: BaseAudioContext, initial: MixerSettin
     return [name, analyser];
   })) as Record<Channel, AnalyserNode>;
   const samples = Object.fromEntries(Object.keys(analysers).map(name => [name, new Float32Array(2048)])) as Record<Channel, Float32Array<ArrayBuffer>>;
-  mic.connect(analysers.mic); analysers.mic.connect(master);
+  mic.connect(analysers.mic);
+  analysers.mic.connect(micShared); micShared.connect(master);
+  analysers.mic.connect(micDirect); micDirect.connect(voiceMaster); voiceMaster.connect(voiceLimiter); voiceLimiter.connect(overload);
   analysers.mic.connect(monitorMic); monitorMic.connect(monitorBus);
   music.connect(duck); duck.connect(analysers.music);
   soundboard.connect(analysers.soundboard);
@@ -55,6 +61,9 @@ export function createMixerGraph(context: BaseAudioContext, initial: MixerSettin
     for (const [name, node] of Object.entries({ mic, music, soundboard, master }) as [Channel, GainNode][]) {
       smooth(node.gain, next.muted[name] ? 0 : next.levels[name]);
     }
+    smooth(voiceMaster.gain, next.muted.master ? 0 : next.levels.master);
+    smooth(micShared.gain, next.voiceHeadroom ? 0 : 1);
+    smooth(micDirect.gain, next.voiceHeadroom ? 1 : 0);
     smooth(monitorBus.gain, next.muted.master ? 0 : next.levels.master);
     smooth(monitorMic.gain, next.monitorMic ? 1 : 0);
     smooth(monitorMusic.gain, next.monitorMusicVolume);
@@ -63,7 +72,7 @@ export function createMixerGraph(context: BaseAudioContext, initial: MixerSettin
     if (!next.ducking || next.muted.mic || next.levels.mic === 0) updateDuck(0);
   }
   // Start silent until settings take effect; particularly the mic monitor must not leak on startup.
-  for (const node of [mic, music, soundboard, master, monitorBus, monitorMic, monitorLevel, monitorMusic]) node.gain.value = 0;
+  for (const node of [mic, music, soundboard, master, voiceMaster, micShared, micDirect, monitorBus, monitorMic, monitorLevel, monitorMusic]) node.gain.value = 0;
   apply(initial);
   function meter(): Meters {
     const peaks = { mic: 0, music: 0, soundboard: 0, master: 0 };
@@ -77,9 +86,12 @@ export function createMixerGraph(context: BaseAudioContext, initial: MixerSettin
     }
     updateDuck(Math.sqrt(micSquare / samples.mic.length));
     overload.getFloatTimeDomainData(overloadSamples);
-    return { ...peaks, ducking: ducked, reduction: compressor.reduction,
+    // With headroom on only the voice limiter can touch speech. Without it, any shared reduction while the mic
+    // carries signal is reduction applied to the voice too.
+    const voiceReduction = settings.voiceHeadroom ? voiceLimiter.reduction : (peaks.mic > 0.02 ? compressor.reduction : 0);
+    return { ...peaks, ducking: ducked, reduction: compressor.reduction, voiceReduction,
       overload: overloadSamples.some(sample => Math.abs(sample) > dbToGain(-1)) };
   }
-  return { mic, music, soundboard, master, virtualOut: analysers.master, monitorOut: monitorLevel,
-    compressor, mono, duck, apply, meter, updateDuck };
+  return { mic, music, soundboard, master, voiceMaster, virtualOut: analysers.master, monitorOut: monitorLevel,
+    compressor, voiceLimiter, mono, duck, apply, meter, updateDuck };
 }
