@@ -6,7 +6,11 @@ export interface DeviceReport {
 export const PAD_COUNT = 9;
 export interface SoundPad { slot: number; id: string; title: string; url: string; hotkey: string | null }
 export interface PadState extends SoundPad { ready: boolean; error: string | null }
-export interface IntegrationStatus { discord: boolean; fivem: boolean }
+export interface IntegrationStatus { discord: boolean; fivem: boolean; fivemTune: FivemTuneStatus }
+// MicMix edits two lines in FiveM's saved settings (fivem.cfg) so the CABLE Output stream is not noise-suppressed
+// and is encoded at full bitrate. FiveM rewrites that file when it exits, so writes wait until it is closed.
+export type FivemTuneState = 'applied' | 'restored' | 'waiting' | 'missing' | 'error';
+export interface FivemTuneStatus { enabled: boolean; state: FivemTuneState; detail: string | null }
 // Shared-mode format Windows runs an endpoint at (read from the registry in main; Web Audio cannot see it).
 export interface EndpointFormat {
   flow: 'render' | 'capture'; name: string; device: string; label: string;
@@ -14,7 +18,7 @@ export interface EndpointFormat {
 }
 // Rates the live engine actually runs at, so a mismatch with Windows is visible in Diagnostics.
 export interface EngineInfo { sampleRate: number; micSampleRate: number | null; micChannels: number | null }
-export interface SetupConfig { setupDone: boolean; micLabel: string | null; monitorLabel: string | null; updateCheck: boolean }
+export interface SetupConfig { setupDone: boolean; micLabel: string | null; monitorLabel: string | null; updateCheck: boolean; fivemTune: boolean }
 export type UpdateStatus =
   | { phase: 'idle' } | { phase: 'checking' }
   | { phase: 'upToDate'; version: string; at: number }
@@ -56,6 +60,7 @@ export interface MicMixBridge {
   installUpdate(): Promise<boolean>;
   updatesSupported(): Promise<boolean>;
   setUpdateCheck(enabled: boolean): Promise<void>;
+  setFivemTune(enabled: boolean): Promise<void>;
 }
 declare global {
   // Chromium supports these APIs; TypeScript 5.9's DOM declarations omit them.

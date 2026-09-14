@@ -86,14 +86,25 @@ Check three things, in order.
    Windows Settings → System → Sound → device → **Format**.
 
 Everything after CABLE Output belongs to the voice app. Discord sends about
-64 kbps Opus. FiveM sends voice through Mumble at a bitrate the **server** picks,
-and with the common `voice_useNativeAudio` setup proximity voice is played back
-inside the game engine with distance and room effects, so it always sounds more
-"in the world" than Discord. In FiveM Settings → Voice Chat set **Input Device →
-CABLE Output**, turn off any noise-suppression option your build shows, and set
-the mic sensitivity low enough that quiet music still passes. `npm run
-check:loopback` measures the MicMix → VB-CABLE path end to end if you want proof
-that the app itself is transparent.
+64 kbps Opus with its processing off when you follow the Custom-profile steps.
+FiveM is harsher: it runs a speech-only noise suppressor (RNNoise) plus a
+high-pass filter, an automatic gain control and a voice gate on everything it
+captures, then encodes it as 48 kbps mono, and with the common
+`voice_useNativeAudio` setup the result is played back inside the game engine
+with distance and room effects. Music through that chain sounds low, hollow and
+"in a fish bowl" even when Discord sounds fine.
+
+MicMix fixes the part it can: **Tune FiveM voice for MicMix** (Settings →
+Discord & FiveM, on by default) sets `voice_enableNoiseSuppression false` and
+`voice_inBitrate 128000` in FiveM's saved settings file
+(`%APPDATA%\CitizenFXivem.cfg`). FiveM rewrites that file when it exits, so
+MicMix writes it while FiveM is closed and again after every FiveM session; the
+card shows *Applied*, *Waiting* or an error. Turning the switch off restores
+FiveM's defaults. The remaining filter, gain control and in-game effects are
+FiveM's and cannot be changed from outside; use push-to-talk so the voice gate
+never cuts the music, and ask a friend to disable "native audio" on their side
+if the reverb is the problem. `npm run check:loopback` measures the MicMix →
+VB-CABLE path end to end if you want proof that the app itself is transparent.
 
 **I hear the music twice / an echo.**
 Two playback paths are open at once — usually MicMix's **Headphone monitor**

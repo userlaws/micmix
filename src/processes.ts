@@ -1,6 +1,5 @@
 import { execFile } from 'node:child_process';
-import type { IntegrationStatus } from './shared';
-// Detection only. MicMix never automates Discord or FiveM; it shows the exact manual path.
+// Detection only. Discord is never automated; FiveM's saved voice settings are tuned in src/fivem-config.ts.
 export function runningProcessNames(): Promise<Set<string>> {
   return new Promise(resolve => {
     execFile('tasklist', ['/FO', 'CSV', '/NH'], { windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) => {
@@ -13,7 +12,7 @@ export function runningProcessNames(): Promise<Set<string>> {
     });
   });
 }
-export async function integrationStatus(): Promise<IntegrationStatus> {
+export async function integrationStatus(): Promise<{ discord: boolean; fivem: boolean }> {
   const names = await runningProcessNames();
   return {
     discord: ['discord.exe', 'discordptb.exe', 'discordcanary.exe'].some(name => names.has(name)),

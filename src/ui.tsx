@@ -77,6 +77,16 @@ function SampleRates({ formats, micLabel, engine }: { formats: EndpointFormat[];
 }
 const mb = (bytes: number) => (bytes / 1048576).toFixed(bytes >= 104857600 ? 0 : 1) + ' MB';
 const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+function fivemTuneText(tune: IntegrationStatus['fivemTune']): string {
+  if (!tune.enabled) return tune.state === 'waiting' ? 'FiveM defaults come back when FiveM closes.' : 'Off. FiveM keeps its own noise suppression and bitrate.';
+  switch (tune.state) {
+    case 'applied': return 'Applied: noise suppression off, 128 kbps voice. Takes effect the next time FiveM starts.';
+    case 'waiting': return 'FiveM is running. MicMix applies this as soon as FiveM closes.';
+    case 'missing': return 'Waiting for FiveM: its settings file appears after FiveM has run once on this PC.';
+    case 'error': return 'Could not update FiveM settings' + (tune.detail ? ': ' + tune.detail : '.');
+    default: return 'Ready.';
+  }
+}
 function updateSummary(status: UpdateStatus, current: string, supported: boolean): string {
   if (!supported) return 'MicMix ' + current + '. Updates apply to installed builds only.';
   switch (status.phase) {
@@ -114,7 +124,7 @@ function App() {
   const [audio, setAudio] = useState(initialAudioState);
   const [meters, setMeters] = useState(emptyMeters);
   const [config, setConfig] = useState<(SetupConfig & { appVersion: string }) | null>(null);
-  const [integrations, setIntegrations] = useState<IntegrationStatus>({ discord: false, fivem: false });
+  const [integrations, setIntegrations] = useState<IntegrationStatus>({ discord: false, fivem: false, fivemTune: { enabled: true, state: 'missing', detail: null } });
   const [update, setUpdate] = useState<UpdateStatus>({ phase: 'idle' });
   const [updatesSupported, setUpdatesSupported] = useState(false);
   const [updateDismissed, setUpdateDismissed] = useState('');
@@ -363,8 +373,10 @@ function App() {
             <div className="row col"><div className="row-top"><strong>Discord</strong><span className={'val ' + (integrations.discord ? 'accent' : '')}>{integrations.discord ? 'running' : 'not detected'}</span></div>
               <p>User Settings → Voice & Video → Input Device → <strong>CABLE Output (VB-Audio Virtual Cable)</strong>. Custom profile: Noise Suppression None, Echo Cancellation off, Automatic Gain Control off.</p></div>
             <div className="row col"><div className="row-top"><strong>FiveM</strong><span className={'val ' + (integrations.fivem ? 'accent' : '')}>{integrations.fivem ? 'running' : 'not detected'}</span></div>
-              <p>Settings → Voice Chat → Input Device → <strong>CABLE Output (VB-Audio Virtual Cable)</strong>. Turn off any noise suppression option and set the mic sensitivity so quiet music still passes.</p>
-              <small>Proximity voice is played back inside the game with distance and room effects, and the server picks the voice bitrate, so it never sounds as direct as Discord. If the Mic strip shows "Limiting your voice", lower your mic gain first.</small>
+              <p>Settings → Voice Chat → Input Device → <strong>CABLE Output (VB-Audio Virtual Cable)</strong>, and use push-to-talk so FiveM's voice gate never cuts the music.</p>
+              <div className="row-top"><span className="row-label"><span>Tune FiveM voice for MicMix</span><small>{fivemTuneText(integrations.fivemTune)}</small></span>
+                <Switch checked={integrations.fivemTune.enabled} onChange={enabled => { setIntegrations({ ...integrations, fivemTune: { ...integrations.fivemTune, enabled } }); void window.micmix.setFivemTune(enabled).catch(e => setError(String(e))); }} label="Tune FiveM voice for MicMix" /></div>
+              <small>FiveM runs a speech-only noise suppressor and a 48 kbps voice codec on everything it captures, which makes music sound low and hollow. MicMix turns that suppressor off and raises the bitrate in FiveM's saved settings. Proximity voice is still played back inside the game with distance and room effects, so it never sounds as direct as Discord.</small>
               <small>Automatic Discord device switching needs a Discord-approved app and an online sign-in, so MicMix keeps this manual and never touches Discord's files.</small></div>
           </div>
           <div className="group span about"><h2>About MicMix{config?.appVersion ? ' ' + config.appVersion : ''}</h2>

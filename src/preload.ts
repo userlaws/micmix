@@ -51,7 +51,8 @@ if (process.argv.includes('--audio-worker')) {
     checkForUpdates: () => ipcRenderer.invoke('update:check'),
     installUpdate: () => ipcRenderer.invoke('update:install'),
     updatesSupported: () => ipcRenderer.invoke('update:supported'),
-    setUpdateCheck: enabled => ipcRenderer.invoke('config:update-check', enabled)
+    setUpdateCheck: enabled => ipcRenderer.invoke('config:update-check', enabled),
+    setFivemTune: enabled => ipcRenderer.invoke('config:fivem-tune', enabled)
   };
   contextBridge.exposeInMainWorld('micmix', api);
 }

@@ -9,6 +9,8 @@ import { validCommand } from './commands';
 import { validAccelerator } from './hotkeys';
 import { loadConfig, saveConfig } from './config';
 import { integrationStatus } from './processes';
+import { fivemConfigPath, writeFivemVoice } from './fivem-config';
+import { existsSync } from 'node:fs';
 import { readEndpointFormats } from './audio-formats';
 import { checkForUpdates, installUpdate, updateStatus, onUpdateStatus, updatesSupported } from './updates';
 import { youtubeInput } from './youtube-url';
@@ -128,14 +130,38 @@ async function restore() {
   config.queue = []; scheduleSave();
 }
 
-let integrations: IntegrationStatus = { discord: false, fivem: false };
+let integrations: IntegrationStatus = { discord: false, fivem: false, fivemTune: { enabled: true, state: 'missing', detail: null } };
 let integrationTimer: NodeJS.Timeout | undefined;
+function publishIntegrations() { if (ui && !ui.isDestroyed()) ui.webContents.send('integrations:status', integrations); }
+// FiveM voice tuning (user request 2026-09-13): FiveM runs RNNoise and a 48 kbps voice codec on everything it
+// captures, which makes the MicMix mix sound low and hollow there while Discord sounds fine. MicMix sets
+// voice_enableNoiseSuppression false and voice_inBitrate 128000 in FiveM's saved settings. FiveM rewrites that
+// file on exit, so the edit is made only while FiveM is closed and repeated after every FiveM session.
+function syncFivemTuning() {
+  const enabled = config.fivemTune;
+  const file = fivemConfigPath();
+  let status: IntegrationStatus['fivemTune'];
+  if (!file || !existsSync(file)) status = { enabled, state: 'missing', detail: null };
+  else if (integrations.fivem) status = { enabled, state: 'waiting', detail: null };
+  else {
+    try {
+      writeFivemVoice(file, enabled);
+      status = { enabled, state: enabled ? 'applied' : 'restored', detail: null };
+    } catch (error) { status = { enabled, state: 'error', detail: String((error as Error)?.message ?? error) }; }
+  }
+  const before = integrations.fivemTune;
+  integrations = { ...integrations, fivemTune: status };
+  if (before.enabled !== status.enabled || before.state !== status.state || before.detail !== status.detail) publishIntegrations();
+}
 async function pollIntegrations() {
   const next = await integrationStatus();
   if (next.discord !== integrations.discord || next.fivem !== integrations.fivem) {
-    integrations = next;
-    if (ui && !ui.isDestroyed()) ui.webContents.send('integrations:status', integrations);
-  }
+    const fivemChanged = next.fivem !== integrations.fivem;
+    integrations = { ...integrations, ...next };
+    publishIntegrations();
+    // Apply (or re-apply) the tuning the moment FiveM closes, and flag it as waiting while FiveM runs.
+    if (fivemChanged) syncFivemTuning();
+  } else if (integrations.fivemTune.state === 'missing' && !integrations.fivem) syncFivemTuning(); // fivem.cfg may appear later
 }
 
 const audioUrl = pathToFileURL(path.join(__dirname, 'audio.html')).href;
@@ -277,7 +303,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle('config:get', event => {
     if (!fromUi(event)) throw new Error('Unauthorized');
-    return { setupDone: config.setupDone, micLabel: config.micLabel, monitorLabel: config.monitorLabel, updateCheck: config.updateCheck, appVersion: app.getVersion() };
+    return { setupDone: config.setupDone, micLabel: config.micLabel, monitorLabel: config.monitorLabel, updateCheck: config.updateCheck, fivemTune: config.fivemTune, appVersion: app.getVersion() };
   });
   ipcMain.handle('config:devices', (event, micLabel: string | null, monitorLabel: string | null) => {
     if (!fromUi(event)) throw new Error('Unauthorized');
@@ -299,6 +325,11 @@ app.whenReady().then(async () => {
     if (!fromUi(event)) throw new Error('Unauthorized');
     config.updateCheck = enabled === true; scheduleSave();
     scheduleUpdateCheck();
+  });
+  ipcMain.handle('config:fivem-tune', (event, enabled: boolean) => {
+    if (!fromUi(event)) throw new Error('Unauthorized');
+    config.fivemTune = enabled === true; scheduleSave();
+    syncFivemTuning();
   });
   ipcMain.handle('download:vbcable', event => {
     if (!fromUi(event)) throw new Error('Unauthorized');
@@ -413,7 +444,8 @@ app.whenReady().then(async () => {
   }, 20000);
   await worker.loadURL(audioUrl);
   await restore();
-  void pollIntegrations();
+  await pollIntegrations();
+  syncFivemTuning();
   integrationTimer = setInterval(() => { void pollIntegrations(); }, 5000);
   if (smokeTest && ui) {
     const deadline = Date.now() + 20000;
