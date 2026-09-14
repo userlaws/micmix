@@ -21,8 +21,9 @@ module.exports = async function smoke(ui) {
   const start = await state();
   if (!start.fivemTune || !(await evalUi(`!!document.querySelector('${label}')`))) throw new Error('FiveM tuning switch missing');
   console.log('initial:', JSON.stringify(start.fivemTune), '|', await statusText());
-  await evalUi(`document.querySelector('${label}').scrollIntoView({ block: 'center' })`);
-  await sleep(250);
+  // The settings sheet scrolls itself (.sheet, overflow auto), so jump it to the FiveM card before the capture.
+  await evalUi(`(() => { const sheet = document.querySelector('.sheet'); const el = document.querySelector('${label}'); sheet.scrollTop = el.getBoundingClientRect().top - sheet.getBoundingClientRect().top + sheet.scrollTop - sheet.clientHeight / 2; })()`);
+  await sleep(500);
   await writeFile(path.join(shots, 'shot-fivem-card.png'), (await ui.webContents.capturePage()).toPNG());
   // Off then on again: main must report restored/applied (or waiting while FiveM runs) and persist the flag.
   await evalUi(`document.querySelector('${label}').click()`);
