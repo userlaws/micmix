@@ -96,7 +96,7 @@ with distance and room effects. Music through that chain sounds low, hollow and
 
 MicMix fixes the part it can: **Tune FiveM voice for MicMix** (Settings →
 Discord & FiveM, on by default) sets `voice_enableNoiseSuppression false` and
-`voice_inBitrate 128000` in FiveM's saved settings file
+`voice_inBitrate 96000` in FiveM's saved settings file
 (`%APPDATA%\CitizenFXivem.cfg`). FiveM rewrites that file when it exits, so
 MicMix writes it while FiveM is closed and again after every FiveM session; the
 card shows *Applied*, *Waiting* or an error. Turning the switch off restores

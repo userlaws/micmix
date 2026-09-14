@@ -7,9 +7,12 @@ import path from 'node:path';
 //   voice_inBitrate               Opus bitrate, default 48000 constant mono. At 64000 and above FiveM switches
 //                                 the encoder to its low-delay music mode. Not archived by FiveM, so the line is
 //                                 dropped on exit and MicMix puts it back.
+// 96 kbps, not higher: FXServer's built-in Mumble server hard-codes a 144 kbps per-client budget and silently
+// drops voice packets over it, counting 32 bytes of overhead per 40 ms packet. 128 kbps would use ~96% of that
+// budget and risk choppy voice; 96 kbps uses ~74% and is still twice FiveM's default.
 // FiveM rewrites the whole file when it exits, so edits only stick when FiveM is closed. Everything else in the
 // file (key binds, profile settings, other convars) is preserved byte for byte.
-export const FIVEM_TUNING = { noiseSuppression: false, bitrate: 128000 } as const;
+export const FIVEM_TUNING = { noiseSuppression: false, bitrate: 96000 } as const;
 export interface FivemVoiceValues { noiseSuppression: boolean | null; bitrate: number | null }
 
 export function fivemConfigPath(appData = process.env.APPDATA): string | null {

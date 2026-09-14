@@ -135,7 +135,7 @@ let integrationTimer: NodeJS.Timeout | undefined;
 function publishIntegrations() { if (ui && !ui.isDestroyed()) ui.webContents.send('integrations:status', integrations); }
 // FiveM voice tuning (user request 2026-09-13): FiveM runs RNNoise and a 48 kbps voice codec on everything it
 // captures, which makes the MicMix mix sound low and hollow there while Discord sounds fine. MicMix sets
-// voice_enableNoiseSuppression false and voice_inBitrate 128000 in FiveM's saved settings. FiveM rewrites that
+// voice_enableNoiseSuppression false and voice_inBitrate 96000 in FiveM's saved settings. FiveM rewrites that
 // file on exit, so the edit is made only while FiveM is closed and repeated after every FiveM session.
 function syncFivemTuning() {
   const enabled = config.fivemTune;

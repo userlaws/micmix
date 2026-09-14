@@ -80,7 +80,7 @@ const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: 'numer
 function fivemTuneText(tune: IntegrationStatus['fivemTune']): string {
   if (!tune.enabled) return tune.state === 'waiting' ? 'FiveM defaults come back when FiveM closes.' : 'Off. FiveM keeps its own noise suppression and bitrate.';
   switch (tune.state) {
-    case 'applied': return 'Applied: noise suppression off, 128 kbps voice. Takes effect the next time FiveM starts.';
+    case 'applied': return 'Applied: noise suppression off, 96 kbps voice. Takes effect the next time FiveM starts.';
     case 'waiting': return 'FiveM is running. MicMix applies this as soon as FiveM closes.';
     case 'missing': return 'Waiting for FiveM: its settings file appears after FiveM has run once on this PC.';
     case 'error': return 'Could not update FiveM settings' + (tune.detail ? ': ' + tune.detail : '.');
