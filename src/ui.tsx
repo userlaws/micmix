@@ -128,6 +128,40 @@ function Shortcuts({ config, run }: { config: UiConfig; run(action: () => Promis
     </div>;
   })}</>;
 }
+// Settings: Discord-style. A section list on the left jumps to (and follows) the scrolling column on the right.
+interface SettingsSection { id: string; name: string; className?: string; body: React.ReactNode }
+function SettingsSheet({ sections, close }: { sections: SettingsSection[]; close(): void }) {
+  const [active, setActive] = useState(sections[0]?.id ?? '');
+  const body = useRef<HTMLDivElement>(null);
+  const spy = useCallback(() => {
+    const el = body.current; if (!el) return;
+    const groups = Array.from(el.querySelectorAll<HTMLElement>('.group[data-section]'));
+    const bottomed = el.scrollTop + el.clientHeight >= el.scrollHeight - 32;
+    let current = groups[0]?.dataset.section ?? '';
+    // The active entry is the last section whose top has crossed the upper third of the viewport.
+    const line = el.scrollTop + el.clientHeight * 0.35;
+    for (const g of groups) if (g.offsetTop - el.offsetTop <= line) current = g.dataset.section ?? current;
+    if (bottomed && groups.length) current = groups[groups.length - 1].dataset.section ?? current;
+    setActive(current);
+  }, []);
+  const jump = (id: string) => {
+    const el = body.current?.querySelector<HTMLElement>('.group[data-section="' + id + '"]');
+    if (el && body.current) body.current.scrollTo({ top: el.offsetTop - body.current.offsetTop - 8, behavior: 'smooth' });
+    setActive(id);
+  };
+  return <section className="card sheet settings" role="dialog" aria-modal="true" aria-label="Settings">
+    <div className="sheet-head"><h2>Settings</h2><button className="btn icon" aria-label="Close settings" onClick={close}><Icon name="close" /></button></div>
+    <div className="sheet-layout">
+      <nav className="settings-nav" aria-label="Settings sections">
+        {sections.map(section => <button key={section.id} className={active === section.id ? 'on' : ''} aria-current={active === section.id ? 'true' : undefined}
+          onClick={() => jump(section.id)}>{section.name}</button>)}
+      </nav>
+      <div className="sheet-body" ref={body} onScroll={spy}>
+        {sections.map(section => <section key={section.id} className={'group ' + (section.className ?? '')} data-section={section.id}>{section.body}</section>)}
+      </div>
+    </div>
+  </section>;
+}
 function UpdateCard({ status, live, dismissed, dismiss }: { status: UpdateStatus; live: boolean; dismissed: string; dismiss(version: string): void }) {
   const active = status.phase === 'available' || status.phase === 'downloading' || status.phase === 'downloaded' || status.phase === 'installing';
   if (!active || dismissed === status.version) return null;
@@ -371,18 +405,15 @@ function App() {
     </section>
     <UpdateCard status={update} live={live} dismissed={updateDismissed} dismiss={setUpdateDismissed} />
     {settingsOpen && <div className="sheet-backdrop" onClick={e => { if (e.target === e.currentTarget) setSettingsOpen(false); }}>
-      <section className="card sheet settings" role="dialog" aria-modal="true" aria-label="Settings">
-        <div className="sheet-head"><h2>Settings</h2><button className="btn icon" aria-label="Close settings" onClick={() => setSettingsOpen(false)}><Icon name="close" /></button></div>
-        <div className="sheet-body">
-          <div className="group"><h2>Ducking</h2>
+      <SettingsSheet close={() => setSettingsOpen(false)} sections={[
+        { id: 'ducking', name: 'Ducking', body: <><h2>Ducking</h2>
             <div className="row"><div className="row-label"><span>Lower the music while I talk</span></div><Switch checked={s.ducking} onChange={ducking => change({ ...s, ducking })} label="Lower the music while I talk" /></div>
             <div className="row col"><div className="row-top"><span>Mic threshold</span><span className="val">{s.duckThreshold} dBFS</span></div>
               <input className="thin" aria-label="Mic threshold" type="range" min="-60" max="-10" step="1" value={s.duckThreshold} style={pct((s.duckThreshold + 60) / 50)} onChange={e => change({ ...s, duckThreshold: Number(e.target.value) })} /></div>
             <div className="row col"><div className="row-top"><span>Music reduction</span><span className="val">{s.duckDb} dB</span></div>
               <input className="thin" aria-label="Music reduction" type="range" min="-30" max="0" step="1" value={s.duckDb} style={pct((s.duckDb + 30) / 30)} onChange={e => change({ ...s, duckDb: Number(e.target.value) })} />
-              <small>50 ms attack · 400 ms release. Raise the threshold if ducking lights up while you are silent.</small></div>
-          </div>
-          <div className="group"><h2>Monitoring & output</h2>
+              <small>50 ms attack · 400 ms release. Raise the threshold if ducking lights up while you are silent.</small></div></> },
+        { id: 'monitoring', name: 'Monitoring & output', body: <><h2>Monitoring & output</h2>
             <div className="row"><div className="row-label"><span>Headphone monitor</span></div><Switch checked={s.monitor} onChange={monitor => change({ ...s, monitor })} label="Headphone monitor enabled" /></div>
             <div className="row"><div className="row-label"><span>Include my microphone</span><small>Hear yourself in the headphones</small></div><Switch checked={s.monitorMic} onChange={monitorMic => change({ ...s, monitorMic })} label="Include microphone in headphones" /></div>
             <div className="row col"><div className="row-top"><span>Monitor volume</span><span className="val">{Math.round(s.monitorVolume * 100)}%</span></div>
@@ -391,28 +422,13 @@ function App() {
               <input className="thin" aria-label="Music in my headphones" type="range" min="0" max="1" step="0.01" value={s.monitorMusicVolume} style={pct(s.monitorMusicVolume)} onChange={e => change({ ...s, monitorMusicVolume: Number(e.target.value) })} />
               <small>Listeners always hear music at the Music/Master level; this only changes how loud it is for you.</small></div>
             <div className="row"><div className="row-label"><span>Voice headroom</span><small>Your voice gets its own limiter, so loud music never pumps or squashes it. Best with ducking on; keep the Mic meter out of the red.</small></div><Switch checked={s.voiceHeadroom} onChange={voiceHeadroom => change({ ...s, voiceHeadroom })} label="Voice headroom" /></div>
-            <div className="row"><div className="row-label"><span>Mono virtual microphone</span><small>Safer for voice apps that expect one channel</small></div><Switch checked={s.mono} onChange={mono => change({ ...s, mono })} label="Mono virtual microphone output" /></div>
-          </div>
-          <div className="group"><h2>Diagnostics</h2>
-            <div className="row"><div className="row-label"><span>Test tone</span><small>1.5 s at 440 Hz into the virtual mic</small></div>
-              <button className="btn" disabled={!live || audio.tone || busy} onClick={() => void send({ type: 'tone' })}>{audio.tone ? 'Sending tone…' : 'Send test tone'}</button></div>
-            <div className="row"><div className="row-label"><span>Rescan devices</span></div><button className="btn" onClick={() => void window.micmix.refreshDevices().catch(e => setError(String(e)))}><Icon name="refresh" size={16} />Rescan</button></div>
-            <SampleRates formats={formats} micLabel={microphones.find(d => d.deviceId === micId)?.label ?? null} engine={audio.engine} />
-            <div className="row"><div className="row-label"><span>Updates</span><small>{updateSummary(update, config?.appVersion ?? '', updatesSupported)}</small></div>
-              {update.phase === 'downloaded' ? <button className="btn primary" onClick={() => void window.micmix.installUpdate().catch(e => setError(String(e)))}><Icon name="refresh" size={16} />Restart to update</button>
-              : <button className="btn" disabled={!updatesSupported || update.phase === 'checking' || update.phase === 'downloading' || update.phase === 'installing'} onClick={() => void window.micmix.checkForUpdates().catch(e => setError(String(e)))}><Icon name="refresh" size={16} />{update.phase === 'checking' ? 'Checking…' : 'Check now'}</button>}</div>
-            <div className="row"><div className="row-label"><span>Update automatically</span><small>Check on launch and every few hours; install while off air.</small></div>
-              <Switch checked={config?.updateCheck ?? true} onChange={enabled => { if (config) setConfig({ ...config, updateCheck: enabled }); void window.micmix.setUpdateCheck(enabled).catch(e => setError(String(e))); }} label="Update automatically" /></div>
-            <div className="row"><div className="row-label"><span>Setup assistant</span><small>Settings, devices, queue and pads are saved automatically.</small></div>
-              <button className="btn" onClick={() => { setSettingsOpen(false); setWizard(true); }}>Run setup again</button></div>
-          </div>
-          <div className="group"><h2>Shortcuts & tray</h2>
+            <div className="row"><div className="row-label"><span>Mono virtual microphone</span><small>Safer for voice apps that expect one channel</small></div><Switch checked={s.mono} onChange={mono => change({ ...s, mono })} label="Mono virtual microphone output" /></div></> },
+        { id: 'shortcuts', name: 'Shortcuts & tray', body: <><h2>Shortcuts & tray</h2>
             {config && <Shortcuts config={config} run={run} />}
             <div className="row"><div className="row-label"><span>Keep running in the tray</span><small>Closing the window hides MicMix next to the clock; your virtual mic stays on. Quit from the tray icon.</small></div>
               <Switch checked={config?.closeToTray ?? true} onChange={enabled => { if (config) setConfig({ ...config, closeToTray: enabled }); void window.micmix.setCloseToTray(enabled).catch(e => setError(String(e))); }} label="Keep running in the tray" /></div>
-            <small className="group-note">Shortcuts work from any app, even with MicMix hidden. They need Ctrl, Alt or Shift plus a key, or an F-key, numpad or media key, so typing is never hijacked.</small>
-          </div>
-          <div className="group"><h2>Discord & FiveM</h2>
+            <small className="group-note">Shortcuts work from any app, even with MicMix hidden. They need Ctrl, Alt or Shift plus a key, or an F-key, numpad or media key, so typing is never hijacked.</small></> },
+        { id: 'integrations', name: 'Discord & FiveM', body: <><h2>Discord & FiveM</h2>
             <div className="row col"><div className="row-top"><strong>Discord</strong><span className={'val ' + (integrations.discord ? 'accent' : '')}>{integrations.discord ? 'running' : 'not detected'}</span></div>
               <p>User Settings → Voice & Video → Input Device → <strong>CABLE Output (VB-Audio Virtual Cable)</strong>. Custom profile: Noise Suppression None, Echo Cancellation off, Automatic Gain Control off.</p></div>
             <div className="row col"><div className="row-top"><strong>FiveM</strong><span className={'val ' + (integrations.fivem ? 'accent' : '')}>{integrations.fivem ? 'running' : 'not detected'}</span></div>
@@ -420,16 +436,26 @@ function App() {
               <div className="row-top"><span className="row-label"><span>Tune FiveM voice for MicMix</span><small>{fivemTuneText(integrations.fivemTune)}</small></span>
                 <Switch checked={integrations.fivemTune.enabled} onChange={enabled => { setIntegrations({ ...integrations, fivemTune: { ...integrations.fivemTune, enabled } }); void window.micmix.setFivemTune(enabled).catch(e => setError(String(e))); }} label="Tune FiveM voice for MicMix" /></div>
               <small>FiveM runs a speech-only noise suppressor and a 48 kbps voice codec on everything it captures, which makes music sound low and hollow. MicMix turns that suppressor off and raises the bitrate in FiveM's saved settings. Proximity voice is still played back inside the game with distance and room effects, so it never sounds as direct as Discord.</small>
-              <small>Automatic Discord device switching needs a Discord-approved app and an online sign-in, so MicMix keeps this manual and never touches Discord's files.</small></div>
-          </div>
-          <div className="group span about"><h2>About MicMix{config?.appVersion ? ' ' + config.appVersion : ''}</h2>
-            <div className="row"><img className="about-art" src="./brand/micmix-primary-1024.png" alt="MicMix logo" width={96} height={96} /><p>One microphone for your voice plus music, YouTube and a soundboard, routed into Discord, FiveM and any app through the MicMix Virtual Mic.</p>
+              <small>Automatic Discord device switching needs a Discord-approved app and an online sign-in, so MicMix keeps this manual and never touches Discord's files.</small></div></> },
+        { id: 'diagnostics', name: 'Diagnostics', body: <><h2>Diagnostics</h2>
+            <div className="row"><div className="row-label"><span>Test tone</span><small>1.5 s at 440 Hz into the virtual mic</small></div>
+              <button className="btn" disabled={!live || audio.tone || busy} onClick={() => void send({ type: 'tone' })}>{audio.tone ? 'Sending tone…' : 'Send test tone'}</button></div>
+            <div className="row"><div className="row-label"><span>Rescan devices</span></div><button className="btn" onClick={() => void window.micmix.refreshDevices().catch(e => setError(String(e)))}><Icon name="refresh" size={16} />Rescan</button></div>
+            <SampleRates formats={formats} micLabel={microphones.find(d => d.deviceId === micId)?.label ?? null} engine={audio.engine} />
+            <div className="row"><div className="row-label"><span>Setup assistant</span><small>Settings, devices, queue and pads are saved automatically.</small></div>
+              <button className="btn" onClick={() => { setSettingsOpen(false); setWizard(true); }}>Run setup again</button></div></> },
+        { id: 'updates', name: 'Updates', body: <><h2>Updates</h2>
+            <div className="row"><div className="row-label"><span>Version</span><small>{updateSummary(update, config?.appVersion ?? '', updatesSupported)}</small></div>
+              {update.phase === 'downloaded' ? <button className="btn primary" onClick={() => void window.micmix.installUpdate().catch(e => setError(String(e)))}><Icon name="refresh" size={16} />Restart to update</button>
+              : <button className="btn" disabled={!updatesSupported || update.phase === 'checking' || update.phase === 'downloading' || update.phase === 'installing'} onClick={() => void window.micmix.checkForUpdates().catch(e => setError(String(e)))}><Icon name="refresh" size={16} />{update.phase === 'checking' ? 'Checking…' : 'Check now'}</button>}</div>
+            <div className="row"><div className="row-label"><span>Update automatically</span><small>Check on launch and every few hours; install while off air.</small></div>
+              <Switch checked={config?.updateCheck ?? true} onChange={enabled => { if (config) setConfig({ ...config, updateCheck: enabled }); void window.micmix.setUpdateCheck(enabled).catch(e => setError(String(e))); }} label="Update automatically" /></div></> },
+        { id: 'about', name: 'About', className: 'about', body: <><h2>About MicMix{config?.appVersion ? ' ' + config.appVersion : ''}</h2>
+            <div className="row"><img className="about-art" src="./brand/micmix-primary-1024.png" alt="MicMix logo" width={72} height={72} /><p>One microphone for your voice plus music, YouTube and a soundboard, routed into Discord, FiveM and any app through the MicMix Virtual Mic.</p>
               <p>The virtual microphone is <strong>VB-CABLE</strong> by <strong>VB-Audio Software</strong>, included as donationware. If MicMix is useful, please support its author.</p>
-              <div className="actions"><button className="btn primary" onClick={() => void window.micmix.openDonation()}><Icon name="heart" size={16} />Donate to VB-Audio</button>
-                <button className="btn" onClick={() => void window.micmix.openVbCableSite()}>vb-audio.com/Cable</button></div></div>
-          </div>
-        </div>
-      </section>
+              <div className="actions"><button className="btn" onClick={() => void window.micmix.openDonation()}><Icon name="heart" size={16} />Donate to VB-Audio</button>
+                <button className="btn" onClick={() => void window.micmix.openVbCableSite()}>vb-audio.com/Cable</button></div></div></> },
+      ]} />
     </div>}
   </main>;
 }

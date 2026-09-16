@@ -38,23 +38,23 @@ module.exports = async function smoke(ui, worker, root, registerFiles, youtube, 
   // 2. Validation and conflicts across pads and actions.
   await assert.rejects(evalUi(`window.micmix.setHotkey('playPause', 'A')`), /Ctrl, Alt or Shift/, 'bare key rejected');
   await assert.rejects(evalUi(`window.micmix.setHotkey('nope', 'Ctrl+Alt+F10')`), /Unknown shortcut/, 'unknown action rejected');
-  await evalUi(`window.micmix.setHotkey('playPause', 'Ctrl+Alt+Shift+F10')`);
-  assert.equal(globalShortcut.isRegistered('Ctrl+Alt+Shift+F10'), true, 'new shortcut registered');
+  await evalUi(`window.micmix.setHotkey('playPause', 'Ctrl+Alt+Shift+F22')`).catch(e => { throw new Error('playPause F22: ' + e); });
+  assert.equal(globalShortcut.isRegistered('Ctrl+Alt+Shift+F22'), true, 'new shortcut registered');
   assert.equal(globalShortcut.isRegistered('Ctrl+Alt+P'), false, 'old shortcut released');
-  await evalUi(`window.micmix.setHotkey('stopPads', 'MediaStop')`); // media keys are safe without a modifier
-  await assert.rejects(evalUi(`window.micmix.setHotkey('next', 'Ctrl+Alt+Shift+F10')`), /"Play \/ pause music" already uses/, 'action duplicate rejected');
+  await evalUi(`window.micmix.setHotkey('stopPads', 'MediaStop')`).catch(e => { throw new Error('stopPads MediaStop: ' + e); }); // media keys are safe without a modifier
+  await assert.rejects(evalUi(`window.micmix.setHotkey('next', 'Ctrl+Alt+Shift+F22')`), /"Play \/ pause music" already uses/, 'action duplicate rejected');
   await helpers.assignPadFile(0, clip);
   await waitFor(s => s.pads[0]?.ready, 'pad decode');
-  await assert.rejects(evalUi(`window.micmix.setPadHotkey(0, 'Ctrl+Alt+Shift+F10')`), /"Play \/ pause music" already uses/, 'pad cannot take an action shortcut');
-  await evalUi(`window.micmix.setPadHotkey(0, 'Ctrl+Alt+Shift+F11')`);
-  await assert.rejects(evalUi(`window.micmix.setHotkey('next', 'Ctrl+Alt+Shift+F11')`), /Pad 1 already uses/, 'action cannot take a pad hotkey');
+  await assert.rejects(evalUi(`window.micmix.setPadHotkey(0, 'Ctrl+Alt+Shift+F22')`), /"Play \/ pause music" already uses/, 'pad cannot take an action shortcut');
+  await evalUi(`window.micmix.setPadHotkey(0, 'Ctrl+Alt+Shift+F23')`);
+  await assert.rejects(evalUi(`window.micmix.setHotkey('next', 'Ctrl+Alt+Shift+F23')`), /Pad 1 already uses/, 'action cannot take a pad hotkey');
   await evalUi(`window.micmix.setHotkey('next', null)`);
   let after = await evalUi('window.micmix.getConfig()');
-  assert.equal(after.hotkeys.next, null); assert.equal(after.hotkeys.playPause, 'Ctrl+Alt+Shift+F10'); assert.equal(after.hotkeys.stopPads, 'MediaStop');
+  assert.equal(after.hotkeys.next, null); assert.equal(after.hotkeys.playPause, 'Ctrl+Alt+Shift+F22'); assert.equal(after.hotkeys.stopPads, 'MediaStop');
   await sleep(700); helpers.flushConfig();
   const saved = JSON.parse(await readFile(helpers.configPath(), 'utf8'));
   assert.deepEqual(saved.hotkeys, after.hotkeys, 'shortcuts persisted');
-  await evalUi(`window.micmix.setHotkey('next', 'Ctrl+Alt+N')`);
+  await evalUi(`window.micmix.setHotkey('next', 'Ctrl+Alt+Shift+F21')`); // a default may be owned by the user's own MicMix while this runs
   // 3. Actions through the shortcut handler. Nothing applies OFF AIR except mute.
   const tracks = await registerFiles([a, b]);
   await evalUi(`window.micmix.command({ type: 'enqueue', tracks: ${JSON.stringify(tracks)} })`);

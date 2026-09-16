@@ -24,7 +24,7 @@ module.exports = async function smoke(ui, worker, root) {
   await sleep(300);
   await writeFile(path.join(shots, 'shot-settings.png'), (await ui.webContents.capturePage()).toPNG());
   await evalUi(`document.querySelector('.about').scrollIntoView({ block: 'end' })`);
-  await sleep(300);
+  await sleep(900); // smooth scroll must finish so the section list highlight settles
   await writeFile(path.join(shots, 'shot-about.png'), (await ui.webContents.capturePage()).toPNG());
   if (process.env.MICMIX_UPDATE_SIMULATE === '1') {
     await evalUi(`document.querySelector('[aria-label="Close settings"]')?.click()`);
