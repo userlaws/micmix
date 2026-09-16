@@ -94,7 +94,7 @@ function updateSummary(status: UpdateStatus, current: string, supported: boolean
     case 'checking': return 'Looking for a newer version…';
     case 'available': return 'MicMix ' + status.version + ' found. Preparing download…';
     case 'downloading': return 'Downloading MicMix ' + status.version + ' · ' + Math.round(status.percent) + '% of ' + mb(status.total);
-    case 'downloaded': return 'MicMix ' + status.version + ' is ready. It installs when you restart or go off air.';
+    case 'downloaded': return 'MicMix ' + status.version + ' is ready. Restart to finish, or it installs when you quit.';
     case 'installing': return 'Installing MicMix ' + status.version + '…';
     case 'upToDate': return 'MicMix ' + current + ' is up to date · checked ' + clock(status.at);
     case 'error': return 'Update check failed: ' + status.message;
@@ -162,23 +162,52 @@ function SettingsSheet({ sections, close }: { sections: SettingsSection[]; close
     </div>
   </section>;
 }
-function UpdateCard({ status, live, dismissed, dismiss }: { status: UpdateStatus; live: boolean; dismissed: string; dismiss(version: string): void }) {
-  const active = status.phase === 'available' || status.phase === 'downloading' || status.phase === 'downloaded' || status.phase === 'installing';
-  if (!active || dismissed === status.version) return null;
+// Header update chip: quiet while nothing is happening, a thin progress ring while downloading, green when
+// ready. Clicking opens a popover with what changed. Installing is always the user's choice; nothing floats
+// over the mixer and MicMix never restarts on its own.
+function UpdateChip({ status, live, current }: { status: UpdateStatus; live: boolean; current: string }) {
+  const [open, setOpen] = useState(false);
+  const [seenUpdate, setSeenUpdate] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (status.phase === 'available' || status.phase === 'downloading' || status.phase === 'downloaded') setSeenUpdate(true); }, [status.phase]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => { if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('mousedown', onDown); window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey); };
+  }, [open]);
+  const failed = status.phase === 'error' && seenUpdate;
+  const active = status.phase === 'available' || status.phase === 'downloading' || status.phase === 'downloaded' || status.phase === 'installing' || failed;
+  if (!active) return null;
   const percent = status.phase === 'downloading' ? status.percent : status.phase === 'available' ? 0 : 100;
-  const title = status.phase === 'available' ? 'Update found' : status.phase === 'downloading' ? 'Updating MicMix' : status.phase === 'downloaded' ? (live ? 'Update ready' : 'Restarting to finish') : 'Installing update';
+  const version = 'version' in status ? status.version : '';
+  const notes = 'notes' in status ? status.notes : '';
+  const label = status.phase === 'downloading' ? Math.round(percent) + '%' : status.phase === 'downloaded' ? 'Restart to update' : status.phase === 'installing' ? 'Installing…' : failed ? 'Update failed' : 'Update';
   const detail = status.phase === 'downloading' ? mb(status.transferred) + ' of ' + mb(status.total) + ' · ' + mb(status.bytesPerSecond) + '/s'
     : status.phase === 'available' ? 'Preparing download…'
-    : status.phase === 'downloaded' ? (live ? 'Installs when you go off air, or restart now.' : 'MicMix will reopen in a moment.')
-    : 'Hang tight, this only takes a few seconds.';
-  return <div className={'update-card ' + status.phase} role="status" aria-live="polite">
-    <div className={'update-ring ' + (status.phase === 'downloaded' ? 'done' : '')} style={{ '--p': percent + '%' } as React.CSSProperties}>
-      <span>{status.phase === 'downloading' ? Math.round(percent) + '%' : status.phase === 'downloaded' ? <Icon name="check" size={18} /> : <i className="spinner" />}</span></div>
-    <div className="update-text"><b>{title} <span className="update-version">v{status.version}</span></b><small>{detail}</small>
-      <div className="update-bar"><i style={{ width: percent + '%' }} /></div></div>
-    {status.phase === 'downloaded' && live && <div className="update-actions">
-      <button className="btn primary small" onClick={() => void window.micmix.installUpdate().catch(() => {})}>Restart now</button>
-      <button className="btn small" onClick={() => dismiss(status.version)}>Later</button></div>}
+    : status.phase === 'downloaded' ? 'Downloaded and verified. Restart whenever you like; otherwise it installs the next time you quit.'
+    : status.phase === 'installing' ? 'Hang tight, MicMix reopens in a few seconds.'
+    : status.phase === 'error' ? status.message : '';
+  return <div className={'update-wrap' + (open ? ' open' : '')} ref={wrap}>
+    <button className={'update-chip ' + status.phase} aria-expanded={open} aria-label={'Update ' + label} onClick={() => setOpen(!open)}>
+      <span className={'chip-ring ' + (status.phase === 'downloaded' ? 'done' : failed ? 'bad' : '')} style={{ '--p': percent + '%' } as React.CSSProperties}>
+        {status.phase === 'downloaded' ? <Icon name="check" size={12} /> : status.phase === 'downloading' ? null : failed ? <Icon name="close" size={12} /> : <i className="spinner tiny" />}</span>
+      <span className="chip-label">{label}</span>
+    </button>
+    {open && <div className="update-pop" role="dialog" aria-label="Update details">
+      <div className="pop-head"><b>MicMix {version ? 'v' + version : ''}</b><small>You have v{current}</small></div>
+      <small className="pop-detail">{detail}</small>
+      {status.phase === 'downloading' && <div className="update-bar"><i style={{ width: percent + '%' }} /></div>}
+      {notes && <div className="pop-notes"><span className="eyebrow">What's new</span><pre>{notes}</pre></div>}
+      <div className="pop-actions">
+        {status.phase === 'downloaded' && <>
+          <button className="btn primary small" disabled={live} title={live ? 'Go off air first' : undefined} onClick={() => { setOpen(false); void window.micmix.installUpdate().catch(() => {}); }}><Icon name="refresh" size={14} />Restart now</button>
+          <button className="btn small" onClick={() => setOpen(false)}>On next quit</button>
+          {live && <small className="pop-live">Go off air first, so an update never cuts your session.</small>}</>}
+        {failed && <button className="btn small" onClick={() => { setOpen(false); void window.micmix.checkForUpdates().catch(() => {}); }}><Icon name="refresh" size={14} />Retry</button>}
+      </div>
+    </div>}
   </div>;
 }
 function App() {
@@ -189,7 +218,6 @@ function App() {
   const [integrations, setIntegrations] = useState<IntegrationStatus>({ discord: false, fivem: false, fivemTune: { enabled: true, state: 'missing', detail: null } });
   const [update, setUpdate] = useState<UpdateStatus>({ phase: 'idle' });
   const [updatesSupported, setUpdatesSupported] = useState(false);
-  const [updateDismissed, setUpdateDismissed] = useState('');
   const [error, setError] = useState('');
   const [micId, setMicId] = useState('');
   const [monitorId, setMonitorId] = useState('');
@@ -333,6 +361,7 @@ function App() {
             onClick={() => void send(audio.status === 'off' ? { type: 'start', deviceId: micId, monitorId } : { type: 'stop' })}>
             <Icon name={live ? 'stop' : audio.status === 'starting' ? 'close' : 'bolt'} size={16} />{live ? 'Go off air' : audio.status === 'starting' ? 'Cancel' : 'Go live'}</button>
         </div>
+        <UpdateChip status={update} live={live} current={config?.appVersion ?? ''} />
         <button className="btn icon gear" aria-label="Settings" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(!settingsOpen)}><Icon name="gear" size={22} /></button>
       </div>
     </header>
@@ -403,7 +432,6 @@ function App() {
         <span className="chip"><Icon name="headphones" size={14} />{s.monitor ? 'Monitor: ' + (s.monitorMic ? 'music + mic' : 'music only') : 'Monitor off'}</span>
       </div>
     </section>
-    <UpdateCard status={update} live={live} dismissed={updateDismissed} dismiss={setUpdateDismissed} />
     {settingsOpen && <div className="sheet-backdrop" onClick={e => { if (e.target === e.currentTarget) setSettingsOpen(false); }}>
       <SettingsSheet close={() => setSettingsOpen(false)} sections={[
         { id: 'ducking', name: 'Ducking', body: <><h2>Ducking</h2>

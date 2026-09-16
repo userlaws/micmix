@@ -43,9 +43,9 @@ export interface UiConfig extends SetupConfig { appVersion: string; unavailableH
 export type UpdateStatus =
   | { phase: 'idle' } | { phase: 'checking' }
   | { phase: 'upToDate'; version: string; at: number }
-  | { phase: 'available'; version: string }
-  | { phase: 'downloading'; version: string; percent: number; transferred: number; total: number; bytesPerSecond: number }
-  | { phase: 'downloaded'; version: string }
+  | { phase: 'available'; version: string; notes: string }
+  | { phase: 'downloading'; version: string; percent: number; transferred: number; total: number; bytesPerSecond: number; notes: string }
+  | { phase: 'downloaded'; version: string; notes: string }
   | { phase: 'installing'; version: string }
   | { phase: 'error'; message: string; at: number };
 export interface SavedConfig extends SetupConfig { version: 1; settings: MixerSettings; queue: LocalTrack[]; pads: (SoundPad | null)[] }

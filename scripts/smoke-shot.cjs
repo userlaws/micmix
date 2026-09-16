@@ -31,10 +31,17 @@ module.exports = async function smoke(ui, worker, root) {
     const waitPhase = async (phases, limit) => { for (let i = 0; i < limit; i++) { const u = await evalUi(`window.micmix.getUpdate()`); if (phases.includes(u.phase)) return u; await sleep(150); } throw new Error('update phase timeout: ' + phases); };
     const mid = await waitPhase(['downloading'], 80);
     await sleep(1800);
+    await writeFile(path.join(shots, 'shot-update-chip.png'), (await ui.webContents.capturePage()).toPNG());
+    await evalUi(`document.querySelector('.update-chip').click()`);
+    await sleep(300);
     await writeFile(path.join(shots, 'shot-update-downloading.png'), (await ui.webContents.capturePage()).toPNG());
-    const done = await waitPhase(['downloaded', 'installing'], 80);
-    await sleep(250);
+    const done = await waitPhase(['downloaded'], 80);
+    await sleep(400);
     await writeFile(path.join(shots, 'shot-update-done.png'), (await ui.webContents.capturePage()).toPNG());
+    // Nothing installs on its own any more: the user presses Restart now (or quits).
+    await sleep(1500);
+    if ((await evalUi(`window.micmix.getUpdate()`)).phase !== 'downloaded') throw new Error('update must wait for the user');
+    await evalUi(`[...document.querySelectorAll('.update-pop button')].find(b => b.textContent.includes('Restart now')).click()`);
     const end = await waitPhase(['upToDate'], 80);
     console.log('Update simulation:', JSON.stringify({ mid: mid.phase, done: done.phase, end: end.phase, version: end.version }));
   }

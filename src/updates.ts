@@ -7,6 +7,14 @@ import type { UpdateStatus } from './shared';
 type Listener = (status: UpdateStatus) => void;
 let status: UpdateStatus = { phase: 'idle' };
 let available = '';
+let notes = '';
+// GitHub release bodies arrive as HTML (or a list of them); keep plain text lines for the popover.
+function plainNotes(raw: unknown): string {
+  const html = Array.isArray(raw) ? raw.map(n => (n && typeof n === 'object' && 'note' in n ? String((n as { note: string }).note) : String(n))).join('\n') : typeof raw === 'string' ? raw : '';
+  return html.replace(/<li[^>]*>/gi, '• ').replace(/<\/(p|li|h\d|div|br)>/gi, '\n').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .split('\n').map(l => l.trim()).filter(Boolean).join('\n').slice(0, 2000);
+}
 const listeners = new Set<Listener>();
 function set(next: UpdateStatus) { status = next; for (const listener of listeners) listener(status); }
 export function updateStatus() { return status; }
@@ -31,22 +39,23 @@ function wire() {
   autoUpdater.allowDowngrade = false;
   autoUpdater.logger = { info() {}, warn: (m: unknown) => console.warn('[update]', m), error: (m: unknown) => console.error('[update]', m), debug() {} };
   autoUpdater.on('checking-for-update', () => set({ phase: 'checking' }));
-  autoUpdater.on('update-available', info => { available = info.version; set({ phase: 'available', version: info.version }); });
+  autoUpdater.on('update-available', info => { available = info.version; notes = plainNotes(info.releaseNotes); set({ phase: 'available', version: info.version, notes }); });
   autoUpdater.on('update-not-available', () => set({ phase: 'upToDate', version: app.getVersion(), at: Date.now() }));
-  autoUpdater.on('download-progress', p => set({ phase: 'downloading', version: available, percent: p.percent, transferred: p.transferred, total: p.total, bytesPerSecond: p.bytesPerSecond }));
-  autoUpdater.on('update-downloaded', info => set({ phase: 'downloaded', version: info.version }));
+  autoUpdater.on('download-progress', p => set({ phase: 'downloading', version: available, percent: p.percent, transferred: p.transferred, total: p.total, bytesPerSecond: p.bytesPerSecond, notes }));
+  autoUpdater.on('update-downloaded', info => set({ phase: 'downloaded', version: info.version, notes }));
   autoUpdater.on('error', error => set({ phase: 'error', message: friendly(error), at: Date.now() }));
 }
 let simTimer: NodeJS.Timeout | null = null;
 function runSimulation() {
   const version = app.getVersion().replace(/(\d+)$/, (_, n) => String(Number(n) + 1));
   const total = 114_758_813;
+  const notes = '• Keyboard shortcuts for play/pause, next, previous, mute and go live\n• MicMix keeps running in the tray when you close the window\n• Settings rebuilt with a section list\n• Fixes for FiveM voice quality';
   const steps: Array<[number, () => void]> = [
     [0, () => set({ phase: 'checking' })],
-    [900, () => set({ phase: 'available', version })],
+    [900, () => set({ phase: 'available', version, notes })],
   ];
-  for (let i = 1; i <= 40; i++) steps.push([1400 + i * 110, () => set({ phase: 'downloading', version, percent: i * 2.5, transferred: total * i / 40, total, bytesPerSecond: 24_000_000 + Math.sin(i) * 6_000_000 })]);
-  steps.push([6200, () => set({ phase: 'downloaded', version })]);
+  for (let i = 1; i <= 40; i++) steps.push([1400 + i * 110, () => set({ phase: 'downloading', version, percent: i * 2.5, transferred: total * i / 40, total, bytesPerSecond: 24_000_000 + Math.sin(i) * 6_000_000, notes })]);
+  steps.push([6200, () => set({ phase: 'downloaded', version, notes })]);
   for (const [delay, run] of steps) setTimeout(run, delay);
 }
 export async function checkForUpdates() {

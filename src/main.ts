@@ -65,7 +65,6 @@ const pending = new Map<number, { resolve(): void; reject(error: Error): void; t
 function publishAudio(state: AudioState) {
   const wasLive = audioState.status !== 'off';
   audioState = state;
-  if (wasLive && state.status === 'off') maybeAutoInstall();
   if (restored) { config.settings = state.settings; scheduleSave(); }
   if (ui && !ui.isDestroyed()) ui.webContents.send('audio:state', state);
   refreshTray();
@@ -170,9 +169,12 @@ function refreshTray() {
   if (!tray) return;
   const live = audioState.status === 'live';
   const current = audioState.queue[audioState.index];
-  tray.setToolTip(live ? 'MicMix · LIVE' + (current ? ' · ' + (audioState.playing ? 'Playing ' : 'Paused ') + current.title : '') : 'MicMix · Off air');
+  const update = updateStatus();
+  const ready = update.phase === 'downloaded' ? update.version : null;
+  tray.setToolTip((live ? 'MicMix · LIVE' + (current ? ' · ' + (audioState.playing ? 'Playing ' : 'Paused ') + current.title : '') : 'MicMix · Off air') + (ready ? ' · Update ' + ready + ' ready' : ''));
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show MicMix', click: () => toggleWindow(true) },
+    ...(ready ? [{ label: 'Restart to update to ' + ready, enabled: !live, click: () => { installUpdate(); } }] : []),
     { type: 'separator' },
     { label: live ? 'Go off air' : audioState.status === 'starting' ? 'Cancel start' : 'Go live', click: () => runHotkey('live') },
     { label: audioState.playing ? 'Pause music' : 'Play music', enabled: live && !!current, click: () => runHotkey('playPause') },
@@ -272,19 +274,12 @@ function protect(win: BrowserWindow) {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', event => event.preventDefault());
 }
-// In-app updates: checked shortly after launch and every 6 hours while running. A downloaded update
-// installs itself (restarting MicMix) only while OFF AIR and after setup, so a live session is never cut.
-// While LIVE the UI offers "Restart to update" instead; an unfinished update also installs on quit.
+// In-app updates: checked shortly after launch and every 6 hours while running, downloaded in the background.
+// Installing is always the user's call (header chip, tray menu or Settings); MicMix never restarts itself.
+// A downloaded update that is ignored installs on the next quit (autoInstallOnAppQuit).
 let updateTimer: NodeJS.Timeout | null = null;
-let installTimer: NodeJS.Timeout | null = null;
 function publishUpdate() { if (ui && !ui.isDestroyed()) ui.webContents.send('update:status', updateStatus()); }
-function maybeAutoInstall() {
-  if (installTimer) { clearTimeout(installTimer); installTimer = null; }
-  if (updateStatus().phase !== 'downloaded') return;
-  if (audioState.status !== 'off' || !config.setupDone) return;
-  installTimer = setTimeout(() => { if (audioState.status === 'off') installUpdate(); }, 1800);
-}
-onUpdateStatus(() => { publishUpdate(); maybeAutoInstall(); });
+onUpdateStatus(() => { publishUpdate(); refreshTray(); });
 function scheduleUpdateCheck() {
   if (updateTimer) { clearTimeout(updateTimer); updateTimer = null; }
   if (!config.updateCheck || !updatesSupported) return;
