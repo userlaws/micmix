@@ -41,6 +41,21 @@ module.exports = async function smoke(ui, worker, root) {
     // Guarded automatic restart: a countdown appears only after the idle window (4 s in simulation) with
     // nothing playing; "Not now" snoozes it; left alone, it restarts by itself.
     const waitRestart = async (want, limit) => { for (let i = 0; i < limit; i++) { const u = await evalUi(`window.micmix.getUpdate()`); if (u.phase === 'downloaded' && (!!u.restartAt) === want) return u; if (u.phase !== 'downloaded') throw new Error('unexpected phase ' + u.phase); await sleep(150); } throw new Error('countdown ' + (want ? 'never started' : 'never stopped')); };
+    // LIVE guard, silently (master 0, monitor off, real mic): no countdown may start while live, and a running
+    // countdown must die the moment the user goes live.
+    const goLive = () => evalUi(`(async () => { const s = await window.micmix.getAudioState(); await window.micmix.command({ type: 'settings', settings: { ...s.settings, levels: { ...s.settings.levels, master: 0 }, monitor: false, monitorVolume: 0 } });
+      const devices = (await window.micmix.getReport()).devices; const mic = devices.find(d => d.kind === 'audioinput' && !['default', 'communications'].includes(d.deviceId) && !/CABLE/i.test(d.label) && /Yeti/i.test(d.label)) || devices.find(d => d.kind === 'audioinput' && !['default', 'communications'].includes(d.deviceId) && !/CABLE/i.test(d.label));
+      await window.micmix.command({ type: 'start', deviceId: mic.deviceId }); for (let i = 0; i < 100; i++) { const a = await window.micmix.getAudioState(); if (a.status === 'live') return; await new Promise(r => setTimeout(r, 100)); } throw new Error('live timeout'); })()`);
+    await goLive();
+    await sleep(9000); // well past the 4 s idle window
+    if ((await evalUi(`window.micmix.getUpdate()`)).restartAt) throw new Error('countdown must never start while LIVE');
+    await evalUi(`window.micmix.command({ type: 'stop' })`);
+    await waitRestart(true, 80); // off air + idle -> countdown
+    await goLive();
+    await waitRestart(false, 20); // going live cancels it
+    await sleep(7000); // longer than the countdown: still live, still no restart
+    if ((await evalUi(`window.micmix.getUpdate()`)).phase !== 'downloaded') throw new Error('restart must not fire while LIVE');
+    await evalUi(`window.micmix.command({ type: 'stop' })`);
     await waitRestart(true, 80);
     await sleep(600);
     await writeFile(path.join(shots, 'shot-update-countdown.png'), (await ui.webContents.capturePage()).toPNG());
