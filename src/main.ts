@@ -1,10 +1,10 @@
-import { app, BrowserWindow, ipcMain, session, dialog, globalShortcut, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, session, dialog, globalShortcut, shell, Tray, Menu, nativeImage } from 'electron';
 import path from 'node:path';
 import { mkdir, writeFile, stat, readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { initialAudioState, emptyMeters, PAD_COUNT, type DeviceReport, type AudioState, type AudioCommand, type LocalTrack, type Meters,
-  type SoundPad, type IntegrationStatus, type SavedConfig, type YouTubeCommand, type VideoBounds } from './shared';
+  type SoundPad, type IntegrationStatus, type SavedConfig, type YouTubeCommand, type VideoBounds, type AppHotkeyAction, type UiConfig, APP_HOTKEY_ACTIONS } from './shared';
 import { validCommand } from './commands';
 import { validAccelerator } from './hotkeys';
 import { loadConfig, saveConfig } from './config';
@@ -68,6 +68,7 @@ function publishAudio(state: AudioState) {
   if (wasLive && state.status === 'off') maybeAutoInstall();
   if (restored) { config.settings = state.settings; scheduleSave(); }
   if (ui && !ui.isDestroyed()) ui.webContents.send('audio:state', state);
+  refreshTray();
 }
 function cancelPending(reason: string) {
   for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject(new Error(reason)); }
@@ -90,6 +91,35 @@ function runCommand(command: AudioCommand) {
 
 // Soundboard pad definitions live here; the worker decodes and plays them.
 let pads: (SoundPad | null)[] = Array.from({ length: PAD_COUNT }, () => null);
+// App shortcuts (play/pause, next, mute mic, go live...) share globalShortcut with the pad hotkeys.
+// Every action is a no-op when it does not apply (nothing queued, OFF AIR), never an error dialog.
+let unavailableHotkeys: AppHotkeyAction[] = [];
+function toggleWindow(show?: boolean) {
+  if (!ui || ui.isDestroyed()) return;
+  const visible = ui.isVisible() && !ui.isMinimized();
+  if (show === false || (show === undefined && visible && ui.isFocused())) { ui.hide(); return; }
+  if (ui.isMinimized()) ui.restore();
+  ui.show(); ui.focus();
+}
+function runHotkey(action: AppHotkeyAction) {
+  const live = audioState.status === 'live';
+  const current = audioState.index >= 0 && audioState.index < audioState.queue.length;
+  const quiet = (command: AudioCommand) => { void runCommand(command).catch(() => {}); };
+  switch (action) {
+    case 'playPause': if (live && current) quiet({ type: audioState.playing ? 'pause' : 'play' }); break;
+    case 'next': if (current && audioState.index + 1 < audioState.queue.length) quiet({ type: 'next' }); break;
+    case 'previous': if (current && audioState.index > 0) quiet({ type: 'select', index: audioState.index - 1 }); break;
+    case 'muteMic': {
+      const settings = audioState.settings;
+      quiet({ type: 'settings', settings: { ...settings, muted: { ...settings.muted, mic: !settings.muted.mic } } });
+      break;
+    }
+    case 'stopPads': if (live) quiet({ type: 'stopPads' }); break;
+    // Going live needs the UI's device choice and its readiness checks, so the UI presses its own button.
+    case 'live': if (ui && !ui.isDestroyed()) ui.webContents.send('hotkey:action', 'live'); break;
+    case 'show': toggleWindow(); break;
+  }
+}
 function syncHotkeys() {
   globalShortcut.unregisterAll();
   for (const pad of pads) {
@@ -99,6 +129,65 @@ function syncHotkeys() {
       console.error('Hotkey unavailable:', pad.hotkey);
     }
   }
+  const unavailable: AppHotkeyAction[] = [];
+  for (const { action } of APP_HOTKEY_ACTIONS) {
+    const accelerator = config.hotkeys[action];
+    if (!accelerator) continue;
+    if (pads.some(pad => pad?.hotkey === accelerator) || !globalShortcut.register(accelerator, () => runHotkey(action))) {
+      unavailable.push(action); console.error('Shortcut unavailable:', action, accelerator);
+    }
+  }
+  const changed = unavailable.join() !== unavailableHotkeys.join();
+  unavailableHotkeys = unavailable;
+  if (changed) publishConfig();
+}
+// True when Windows and other apps let MicMix own this accelerator right now. Leaves everything registered as before.
+function acceleratorAvailable(accelerator: string) {
+  globalShortcut.unregisterAll();
+  const ok = globalShortcut.register(accelerator, () => {});
+  globalShortcut.unregisterAll();
+  syncHotkeys();
+  return ok;
+}
+function hotkeyOwner(accelerator: string, except?: { pad?: number; action?: AppHotkeyAction }): string | null {
+  const pad = pads.find(pad => pad && pad.slot !== except?.pad && pad.hotkey === accelerator);
+  if (pad) return 'Pad ' + (pad.slot + 1);
+  const action = APP_HOTKEY_ACTIONS.find(({ action }) => action !== except?.action && config.hotkeys[action] === accelerator);
+  return action ? '"' + action.name + '"' : null;
+}
+function uiConfig(): UiConfig {
+  return { setupDone: config.setupDone, micLabel: config.micLabel, monitorLabel: config.monitorLabel, updateCheck: config.updateCheck, fivemTune: config.fivemTune,
+    hotkeys: { ...config.hotkeys }, closeToTray: config.closeToTray, unavailableHotkeys: unavailableHotkeys.slice(), appVersion: app.getVersion() };
+}
+function publishConfig() { if (ui && !ui.isDestroyed()) ui.webContents.send('config:changed', uiConfig()); }
+
+// Tray: MicMix keeps running (and keeps the virtual mic fed) after the window is closed. The icon shows the
+// air status in its tooltip and the menu mirrors the main shortcuts.
+let tray: Tray | null = null;
+let quitting = false;
+let trayHintShown = false;
+function refreshTray() {
+  if (!tray) return;
+  const live = audioState.status === 'live';
+  const current = audioState.queue[audioState.index];
+  tray.setToolTip(live ? 'MicMix · LIVE' + (current ? ' · ' + (audioState.playing ? 'Playing ' : 'Paused ') + current.title : '') : 'MicMix · Off air');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Show MicMix', click: () => toggleWindow(true) },
+    { type: 'separator' },
+    { label: live ? 'Go off air' : audioState.status === 'starting' ? 'Cancel start' : 'Go live', click: () => runHotkey('live') },
+    { label: audioState.playing ? 'Pause music' : 'Play music', enabled: live && !!current, click: () => runHotkey('playPause') },
+    { label: 'Next track', enabled: !!current && audioState.index + 1 < audioState.queue.length, click: () => runHotkey('next') },
+    { label: audioState.settings.muted.mic ? 'Unmute mic' : 'Mute mic', click: () => runHotkey('muteMic') },
+    { type: 'separator' },
+    { label: 'Quit MicMix', click: () => { quitting = true; app.quit(); } }
+  ]));
+}
+function createTray() {
+  const icon = nativeImage.createFromPath(path.join(__dirname, 'brand', 'icon.ico'));
+  tray = new Tray(icon.isEmpty() ? nativeImage.createFromPath(path.join(__dirname, 'brand', 'icon.png')).resize({ width: 16, height: 16 }) : icon);
+  tray.on('click', () => toggleWindow(true));
+  tray.on('double-click', () => toggleWindow(true));
+  refreshTray();
 }
 async function updatePads(next: (SoundPad | null)[]) {
   pads = next; config.pads = next; scheduleSave();
@@ -279,21 +368,35 @@ app.whenReady().then(async () => {
       filters: [{ name: 'Audio clips', extensions: ['mp3', 'wav', 'flac', 'ogg'] }] });
     if (!result.canceled && result.filePaths[0]) await assignPadFile(slot, result.filePaths[0]);
   });
+  const HOTKEY_RULE = 'Use Ctrl, Alt or Shift plus a key, or an F-key, numpad or media key.';
   ipcMain.handle('pads:hotkey', async (event, slot: number, hotkey: string | null) => {
     if (!fromUi(event)) throw new Error('Unauthorized');
     if (!validSlot(slot) || !pads[slot]) throw new Error('Choose a clip for this pad first.');
     if (hotkey !== null) {
-      if (!validAccelerator(hotkey)) throw new Error('Use Ctrl, Alt or Shift plus a key, or an F-key or numpad key.');
-      const taken = pads.find(pad => pad && pad.slot !== slot && pad.hotkey === hotkey);
-      if (taken) throw new Error('Pad ' + (taken.slot + 1) + ' already uses that hotkey.');
-      globalShortcut.unregisterAll();
-      const ok = globalShortcut.register(hotkey, () => {});
-      globalShortcut.unregisterAll();
-      if (!ok) { syncHotkeys(); throw new Error('Windows or another app already uses that shortcut. Try a different one.'); }
+      if (!validAccelerator(hotkey)) throw new Error(HOTKEY_RULE);
+      const owner = hotkeyOwner(hotkey, { pad: slot });
+      if (owner) throw new Error(owner + ' already uses that hotkey.');
+      if (!acceleratorAvailable(hotkey)) throw new Error('Windows or another app already uses that shortcut. Try a different one.');
     }
     const next = pads.slice();
     next[slot] = { ...pads[slot]!, hotkey };
     await updatePads(next);
+  });
+  ipcMain.handle('config:hotkey', (event, action: AppHotkeyAction, hotkey: string | null) => {
+    if (!fromUi(event)) throw new Error('Unauthorized');
+    if (!APP_HOTKEY_ACTIONS.some(entry => entry.action === action)) throw new Error('Unknown shortcut.');
+    if (hotkey !== null) {
+      if (!validAccelerator(hotkey)) throw new Error(HOTKEY_RULE);
+      const owner = hotkeyOwner(hotkey, { action });
+      if (owner) throw new Error(owner + ' already uses that hotkey.');
+      if (!acceleratorAvailable(hotkey)) throw new Error('Windows or another app already uses that shortcut. Try a different one.');
+    }
+    config.hotkeys[action] = hotkey; scheduleSave();
+    syncHotkeys(); publishConfig();
+  });
+  ipcMain.handle('config:close-to-tray', (event, enabled: boolean) => {
+    if (!fromUi(event)) throw new Error('Unauthorized');
+    config.closeToTray = enabled === true; scheduleSave(); publishConfig();
   });
   ipcMain.handle('pads:clear', async (event, slot: number) => {
     if (!fromUi(event)) throw new Error('Unauthorized');
@@ -303,7 +406,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle('config:get', event => {
     if (!fromUi(event)) throw new Error('Unauthorized');
-    return { setupDone: config.setupDone, micLabel: config.micLabel, monitorLabel: config.monitorLabel, updateCheck: config.updateCheck, fivemTune: config.fivemTune, appVersion: app.getVersion() };
+    return uiConfig();
   });
   ipcMain.handle('config:devices', (event, micLabel: string | null, monitorLabel: string | null) => {
     if (!fromUi(event)) throw new Error('Unauthorized');
@@ -371,7 +474,7 @@ app.whenReady().then(async () => {
   ipcMain.on('audio:meters', (event, meters: Meters) => {
     if (fromWorker(event) && ui && !ui.isDestroyed()) ui.webContents.send('audio:meters', meters);
   });
-  app.on('second-instance', () => { if (ui) { if (ui.isMinimized()) ui.restore(); ui.show(); ui.focus(); } });
+  app.on('second-instance', () => toggleWindow(true));
 
   ipcMain.handle('devices:get', event => {
     if (!fromUi(event)) throw new Error('Unauthorized');
@@ -430,6 +533,17 @@ app.whenReady().then(async () => {
       if (worker && !worker.isDestroyed()) worker.webContents.send('audio:command', ++commandId, { type: 'stop' });
     });
     ui.on('closed', () => { ui = null; app.quit(); });
+    // Closing the window parks MicMix in the tray so the virtual mic keeps running; Quit lives in the tray menu.
+    ui.on('close', event => {
+      if (quitting || !config.closeToTray || !tray) return;
+      event.preventDefault();
+      ui!.hide();
+      if (!trayHintShown) {
+        trayHintShown = true;
+        tray.displayBalloon({ title: 'MicMix is still running', content: 'Your virtual mic stays on. Click the tray icon to reopen, or right-click it to quit.', iconType: 'info' });
+      }
+    });
+    createTray();
     await ui.loadFile(path.join(__dirname, 'index.html'));
     ui.show();
     ui.focus();
@@ -452,12 +566,14 @@ app.whenReady().then(async () => {
     while (!latest && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
     if (!latest) throw new Error('Smoke check timed out waiting for devices.');
     const smoke = require(path.join(app.getAppPath(), 'scripts', 'smoke-' + smokeName + '.cjs'));
-    await smoke(ui, worker, app.getAppPath(), registerFiles, youtube, { assignPadFile, configPath, flushConfig, userData: app.getPath('userData') });
+    await smoke(ui, worker, app.getAppPath(), registerFiles, youtube, { assignPadFile, configPath, flushConfig, userData: app.getPath('userData'), runHotkey, tray: () => tray });
     app.quit();
   }
 }).catch(error => { console.error(error); app.exit(1); });
 app.on('before-quit', () => {
+  quitting = true;
   clearTimeout(timeout); clearInterval(integrationTimer);
+  tray?.destroy(); tray = null;
   globalShortcut.unregisterAll(); youtubeSearch?.close(); youtube?.close(); cancelPending('MicMix is closing.');
   if (config) flushConfig();
 });

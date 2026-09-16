@@ -45,6 +45,27 @@ Windows 11 · Electron + React + TypeScript · no account, no cloud, no download
    hear the music twice. Your devices, faders, queue, and pads are saved
    automatically for next time.
 
+**Keyboard shortcuts (work from any app, even in-game).** Change or turn them
+off in **Settings → Shortcuts & tray**; click a key button, press the new combo,
+Backspace clears it. Media keys (Play/Pause, Next, Previous, Stop) are allowed
+on their own; everything else needs Ctrl, Alt or Shift, or an F-key / numpad
+key, so normal typing is never hijacked. Defaults:
+
+| Action | Default |
+| --- | --- |
+| Play / pause music | Ctrl + Alt + P |
+| Next track | Ctrl + Alt + N |
+| Previous track | Ctrl + Alt + B |
+| Mute / unmute mic | Ctrl + Alt + K |
+| Stop all pads | Ctrl + Alt + X |
+| Go live / off air | Ctrl + Alt + L |
+| Show / hide MicMix | Ctrl + Alt + H |
+
+**Tray.** Closing the window hides MicMix next to the clock and keeps the
+virtual mic running; click the tray icon to bring it back, right-click for
+Go live, Play/Pause, Next, Mute and **Quit**. Turn this off in
+**Settings → Shortcuts & tray** if you prefer close to quit.
+
 ---
 
 ## Troubleshooting
@@ -130,6 +151,7 @@ videos may also refuse to play.
 | `npm run check:phase3` | Silent YouTube embed load + capture test. |
 | `npm run check:youtube-search` | Live search, fuzzy ranking, thumbnails, queue additions, cancellation, and error recovery. |
 | `npm run check:phase4` | Fresh-install + restart simulation (wizard, pads, hotkeys, persistence). |
+| `npm run check:hotkeys` | App shortcuts (defaults, validation, conflicts, every action) and close-to-tray, silently. |
 | `npm run check:phase5` | About/donation UI check. |
 | `npm run dist:win` | Build the NSIS installer (see below). |
 

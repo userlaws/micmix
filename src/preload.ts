@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import type { DeviceReport, MicMixBridge, AudioState, AudioCommand, Meters, YouTubeCommand, YouTubeUpdate, IntegrationStatus, UpdateStatus } from './shared';
+import type { DeviceReport, MicMixBridge, AudioState, AudioCommand, Meters, YouTubeCommand, YouTubeUpdate, IntegrationStatus, UpdateStatus, UiConfig, AppHotkeyAction } from './shared';
 if (process.argv.includes('--audio-worker')) {
   contextBridge.exposeInMainWorld('audioHost', {
     youtube: (command: YouTubeCommand) => ipcRenderer.invoke('youtube:control', command),
@@ -35,6 +35,10 @@ if (process.argv.includes('--audio-worker')) {
     refreshDevices: () => ipcRenderer.invoke('devices:refresh'),
     onReport: subscribe<DeviceReport>('devices:report'),
     getConfig: () => ipcRenderer.invoke('config:get'),
+    onConfig: subscribe<UiConfig>('config:changed'),
+    setHotkey: (action, hotkey) => ipcRenderer.invoke('config:hotkey', action, hotkey),
+    setCloseToTray: enabled => ipcRenderer.invoke('config:close-to-tray', enabled),
+    onHotkey: subscribe<AppHotkeyAction>('hotkey:action'),
     saveDevices: (micLabel, monitorLabel) => ipcRenderer.invoke('config:devices', micLabel, monitorLabel),
     completeSetup: () => ipcRenderer.invoke('config:setup-done'),
     assignPad: slot => ipcRenderer.invoke('pads:assign', slot),

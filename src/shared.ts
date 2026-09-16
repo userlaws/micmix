@@ -18,7 +18,28 @@ export interface EndpointFormat {
 }
 // Rates the live engine actually runs at, so a mismatch with Windows is visible in Diagnostics.
 export interface EngineInfo { sampleRate: number; micSampleRate: number | null; micChannels: number | null }
-export interface SetupConfig { setupDone: boolean; micLabel: string | null; monitorLabel: string | null; updateCheck: boolean; fivemTune: boolean }
+// App-wide global shortcuts (Electron accelerators). null disables an action; a value that another app or Windows
+// already owns fails to register and is reported in unavailableHotkeys so Settings can show it.
+export type AppHotkeyAction = 'live' | 'playPause' | 'next' | 'previous' | 'muteMic' | 'stopPads' | 'show';
+export type AppHotkeys = Record<AppHotkeyAction, string | null>;
+export const APP_HOTKEY_ACTIONS: { action: AppHotkeyAction; name: string; hint: string }[] = [
+  { action: 'playPause', name: 'Play / pause music', hint: 'Toggles the current track while live' },
+  { action: 'next', name: 'Next track', hint: 'Skips to the next item in the queue' },
+  { action: 'previous', name: 'Previous track', hint: 'Goes back one item in the queue' },
+  { action: 'muteMic', name: 'Mute / unmute mic', hint: 'Silences your voice; music keeps playing' },
+  { action: 'stopPads', name: 'Stop all pads', hint: 'Cuts every soundboard clip' },
+  { action: 'live', name: 'Go live / off air', hint: 'Same as the big button in the header' },
+  { action: 'show', name: 'Show / hide MicMix', hint: 'Brings the window back from the tray' },
+];
+export const defaultHotkeys: AppHotkeys = {
+  playPause: 'Ctrl+Alt+P', next: 'Ctrl+Alt+N', previous: 'Ctrl+Alt+B', muteMic: 'Ctrl+Alt+K',
+  stopPads: 'Ctrl+Alt+X', live: 'Ctrl+Alt+L', show: 'Ctrl+Alt+H'
+};
+export interface SetupConfig {
+  setupDone: boolean; micLabel: string | null; monitorLabel: string | null; updateCheck: boolean; fivemTune: boolean;
+  hotkeys: AppHotkeys; closeToTray: boolean;
+}
+export interface UiConfig extends SetupConfig { appVersion: string; unavailableHotkeys: AppHotkeyAction[] }
 export type UpdateStatus =
   | { phase: 'idle' } | { phase: 'checking' }
   | { phase: 'upToDate'; version: string; at: number }
@@ -42,7 +63,11 @@ export interface MicMixBridge {
   getReport(): Promise<DeviceReport | null>;
   refreshDevices(): Promise<void>;
   onReport(callback: (report: DeviceReport) => void): () => void;
-  getConfig(): Promise<SetupConfig & { appVersion: string }>;
+  getConfig(): Promise<UiConfig>;
+  onConfig(callback: (config: UiConfig) => void): () => void;
+  setHotkey(action: AppHotkeyAction, hotkey: string | null): Promise<void>;
+  setCloseToTray(enabled: boolean): Promise<void>;
+  onHotkey(callback: (action: AppHotkeyAction) => void): () => void;
   saveDevices(micLabel: string | null, monitorLabel: string | null): Promise<void>;
   completeSetup(): Promise<void>;
   assignPad(slot: number): Promise<void>;

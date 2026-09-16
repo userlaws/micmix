@@ -50,7 +50,7 @@ export function Soundboard({ pads, active, live, busy, run, play }: Props) {
         <span className="pad-key">{pad.error ? 'Error' : !pad.ready ? 'Loading…' : pad.hotkey ? describeAccelerator(pad.hotkey) : ''}</span>
       </button>;
     })}</div>
-    <div className="soundboard-tip"><Icon name="bolt" size={14} /><span>{editing ? 'Clips: mp3, wav, flac or ogg up to 60 s, decoded once. Hotkeys need Ctrl, Alt or Shift, or an F-key / numpad key, so they never hijack typing.'
+    <div className="soundboard-tip"><Icon name="bolt" size={14} /><span>{editing ? 'Clips: mp3, wav, flac or ogg up to 60 s, decoded once. Hotkeys need Ctrl, Alt or Shift, or an F-key / numpad / media key, so they never hijack typing.'
       : live ? 'Tap a pad to play, tap again to stop. Pads mix under the Pads fader and reach Discord like everything else.' : 'Go live to play pads. Hotkeys work from any app while live.'}</span></div>
   </section>;
 }

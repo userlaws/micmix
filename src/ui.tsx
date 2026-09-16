@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
-import { initialAudioState, emptyMeters, cablePresent, CABLE_INPUT, CABLE_OUTPUT, type DeviceReport, type AudioCommand, type MixerSettings, type Channel, type SetupConfig, type IntegrationStatus, type Meters, type UpdateStatus, type EndpointFormat, type EngineInfo } from './shared';
+import { initialAudioState, emptyMeters, cablePresent, CABLE_INPUT, CABLE_OUTPUT, APP_HOTKEY_ACTIONS, type DeviceReport, type AudioCommand, type MixerSettings, type Channel, type UiConfig, type AppHotkeyAction, type IntegrationStatus, type Meters, type UpdateStatus, type EndpointFormat, type EngineInfo } from './shared';
+import { acceleratorFromEvent, describeAccelerator } from './hotkeys';
 import { microphoneChoices, playbackChoices } from './devices';
 import { Soundboard } from './soundboard-panel';
 import { YouTubePanel } from './youtube-panel';
@@ -100,6 +101,33 @@ function updateSummary(status: UpdateStatus, current: string, supported: boolean
     default: return 'MicMix ' + current + '. Checks run on launch and every few hours.';
   }
 }
+// Settings > Shortcuts: one row per app action. Click the key button, press the combination; Esc cancels, Backspace clears.
+function Shortcuts({ config, run }: { config: UiConfig; run(action: () => Promise<void>): void }) {
+  const [capturing, setCapturing] = useState<AppHotkeyAction | null>(null);
+  useEffect(() => {
+    if (capturing === null) return;
+    const action = capturing;
+    const onKey = (event: KeyboardEvent) => {
+      event.preventDefault(); event.stopPropagation();
+      if (event.code === 'Escape') { setCapturing(null); return; }
+      if (event.code === 'Backspace') { run(() => window.micmix.setHotkey(action, null)); setCapturing(null); return; }
+      const accelerator = acceleratorFromEvent(event);
+      if (!accelerator) return;
+      run(() => window.micmix.setHotkey(action, accelerator)); setCapturing(null);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [capturing, run]);
+  return <>{APP_HOTKEY_ACTIONS.map(({ action, name, hint }) => {
+    const hotkey = config.hotkeys[action];
+    const unavailable = !!hotkey && config.unavailableHotkeys.includes(action);
+    return <div className="row shortcut" key={action}>
+      <div className="row-label"><span>{name}</span><small className={unavailable ? 'error-text' : ''}>{unavailable ? 'Another app or Windows owns this shortcut. Choose a different one.' : hint}</small></div>
+      <button className={'btn small key ' + (capturing === action ? 'selected' : '')} aria-label={'Shortcut for ' + name} onClick={() => setCapturing(capturing === action ? null : action)}>
+        <Icon name="keyboard" size={14} />{capturing === action ? 'Press keys… Esc cancels, Backspace clears' : hotkey ? describeAccelerator(hotkey) : 'Off'}</button>
+    </div>;
+  })}</>;
+}
 function UpdateCard({ status, live, dismissed, dismiss }: { status: UpdateStatus; live: boolean; dismissed: string; dismiss(version: string): void }) {
   const active = status.phase === 'available' || status.phase === 'downloading' || status.phase === 'downloaded' || status.phase === 'installing';
   if (!active || dismissed === status.version) return null;
@@ -123,7 +151,7 @@ function App() {
   const [report, setReport] = useState<DeviceReport | null>(null);
   const [audio, setAudio] = useState(initialAudioState);
   const [meters, setMeters] = useState(emptyMeters);
-  const [config, setConfig] = useState<(SetupConfig & { appVersion: string }) | null>(null);
+  const [config, setConfig] = useState<UiConfig | null>(null);
   const [integrations, setIntegrations] = useState<IntegrationStatus>({ discord: false, fivem: false, fivemTune: { enabled: true, state: 'missing', detail: null } });
   const [update, setUpdate] = useState<UpdateStatus>({ phase: 'idle' });
   const [updatesSupported, setUpdatesSupported] = useState(false);
@@ -140,6 +168,8 @@ function App() {
   const [formats, setFormats] = useState<EndpointFormat[]>([]);
   const wizardDecided = useRef(false);
   const videoSlot = useRef<HTMLDivElement>(null);
+  // The global "Go live / off air" shortcut presses the header button with whatever devices are selected right now.
+  const liveHotkey = useRef(() => {});
   useEffect(() => {
     let receivedState = false, receivedReport = false, receivedIntegrations = false;
     const offState = window.micmix.onAudioState(value => { receivedState = true; setAudio(value); });
@@ -147,13 +177,15 @@ function App() {
     const offIntegrations = window.micmix.onIntegrations(value => { receivedIntegrations = true; setIntegrations(value); });
     const offMeters = window.micmix.onMeters(setMeters);
     const offUpdate = window.micmix.onUpdate(setUpdate);
+    const offConfig = window.micmix.onConfig(setConfig);
+    const offHotkey = window.micmix.onHotkey(action => { if (action === 'live') liveHotkey.current(); });
     void window.micmix.getUpdate().then(setUpdate).catch(() => {});
     void window.micmix.updatesSupported().then(setUpdatesSupported).catch(() => {});
     void window.micmix.getAudioState().then(value => { if (!receivedState) setAudio(value); }).catch(e => setError(String(e)));
     void window.micmix.getReport().then(value => { if (!receivedReport) setReport(value); }).catch(e => setError(String(e)));
     void window.micmix.getIntegrations().then(value => { if (!receivedIntegrations) setIntegrations(value); }).catch(() => {});
     void window.micmix.getConfig().then(setConfig).catch(e => setError(String(e)));
-    return () => { offState(); offReport(); offIntegrations(); offMeters(); offUpdate(); };
+    return () => { offState(); offReport(); offIntegrations(); offMeters(); offUpdate(); offConfig(); offHotkey(); };
   }, []);
   useEffect(() => {
     if (!settingsOpen) return;
@@ -244,6 +276,11 @@ function App() {
     return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener('resize', update); window.removeEventListener('scroll', update, true); window.micmix.videoBounds(null); };
   }, [current?.youtubeId, current?.title, overlay, error, audio.error, source, audio.queue.length, browsingYouTube]);
   const canGoLive = !(busy || !micId || !cable || !report?.setSinkIdSupported || (audio.settings.monitor && !monitorId));
+  liveHotkey.current = () => {
+    if (wizard) return;
+    if (audio.status === 'off') { if (canGoLive) void send({ type: 'start', deviceId: micId, monitorId }); }
+    else void send({ type: 'stop' });
+  };
   const problem = error || audio.error || report?.error;
   const s = audio.settings;
   return <main onDragOver={e => { e.preventDefault(); }} onDrop={e => { e.preventDefault(); }}>
@@ -368,6 +405,12 @@ function App() {
               <Switch checked={config?.updateCheck ?? true} onChange={enabled => { if (config) setConfig({ ...config, updateCheck: enabled }); void window.micmix.setUpdateCheck(enabled).catch(e => setError(String(e))); }} label="Update automatically" /></div>
             <div className="row"><div className="row-label"><span>Setup assistant</span><small>Settings, devices, queue and pads are saved automatically.</small></div>
               <button className="btn" onClick={() => { setSettingsOpen(false); setWizard(true); }}>Run setup again</button></div>
+          </div>
+          <div className="group"><h2>Shortcuts & tray</h2>
+            {config && <Shortcuts config={config} run={run} />}
+            <div className="row"><div className="row-label"><span>Keep running in the tray</span><small>Closing the window hides MicMix next to the clock; your virtual mic stays on. Quit from the tray icon.</small></div>
+              <Switch checked={config?.closeToTray ?? true} onChange={enabled => { if (config) setConfig({ ...config, closeToTray: enabled }); void window.micmix.setCloseToTray(enabled).catch(e => setError(String(e))); }} label="Keep running in the tray" /></div>
+            <small className="group-note">Shortcuts work from any app, even with MicMix hidden. They need Ctrl, Alt or Shift plus a key, or an F-key, numpad or media key, so typing is never hijacked.</small>
           </div>
           <div className="group"><h2>Discord & FiveM</h2>
             <div className="row col"><div className="row-top"><strong>Discord</strong><span className={'val ' + (integrations.discord ? 'accent' : '')}>{integrations.discord ? 'running' : 'not detected'}</span></div>
