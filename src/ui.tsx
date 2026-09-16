@@ -407,17 +407,19 @@ function App() {
     {settingsOpen && <div className="sheet-backdrop" onClick={e => { if (e.target === e.currentTarget) setSettingsOpen(false); }}>
       <SettingsSheet close={() => setSettingsOpen(false)} sections={[
         { id: 'ducking', name: 'Ducking', body: <><h2>Ducking</h2>
-            <div className="row"><div className="row-label"><span>Lower the music while I talk</span></div><Switch checked={s.ducking} onChange={ducking => change({ ...s, ducking })} label="Lower the music while I talk" /></div>
+            <div className="row"><div className="row-label"><span>Lower the music while I talk</span><small>When your mic hears speech the music dips, so your voice stays on top.</small></div><Switch checked={s.ducking} onChange={ducking => change({ ...s, ducking })} label="Lower the music while I talk" /></div>
             <div className="row col"><div className="row-top"><span>Mic threshold</span><span className="val">{s.duckThreshold} dBFS</span></div>
-              <input className="thin" aria-label="Mic threshold" type="range" min="-60" max="-10" step="1" value={s.duckThreshold} style={pct((s.duckThreshold + 60) / 50)} onChange={e => change({ ...s, duckThreshold: Number(e.target.value) })} /></div>
+              <input className="thin" aria-label="Mic threshold" type="range" min="-60" max="-10" step="1" value={s.duckThreshold} style={pct((s.duckThreshold + 60) / 50)} onChange={e => change({ ...s, duckThreshold: Number(e.target.value) })} />
+              <small>How loud your voice must be before the music ducks. Move left to make it more sensitive.</small></div>
             <div className="row col"><div className="row-top"><span>Music reduction</span><span className="val">{s.duckDb} dB</span></div>
               <input className="thin" aria-label="Music reduction" type="range" min="-30" max="0" step="1" value={s.duckDb} style={pct((s.duckDb + 30) / 30)} onChange={e => change({ ...s, duckDb: Number(e.target.value) })} />
               <small>50 ms attack · 400 ms release. Raise the threshold if ducking lights up while you are silent.</small></div></> },
         { id: 'monitoring', name: 'Monitoring & output', body: <><h2>Monitoring & output</h2>
-            <div className="row"><div className="row-label"><span>Headphone monitor</span></div><Switch checked={s.monitor} onChange={monitor => change({ ...s, monitor })} label="Headphone monitor enabled" /></div>
+            <div className="row"><div className="row-label"><span>Headphone monitor</span><small>Hear the mix in your own headphones. Listeners get the same audio either way.</small></div><Switch checked={s.monitor} onChange={monitor => change({ ...s, monitor })} label="Headphone monitor enabled" /></div>
             <div className="row"><div className="row-label"><span>Include my microphone</span><small>Hear yourself in the headphones</small></div><Switch checked={s.monitorMic} onChange={monitorMic => change({ ...s, monitorMic })} label="Include microphone in headphones" /></div>
             <div className="row col"><div className="row-top"><span>Monitor volume</span><span className="val">{Math.round(s.monitorVolume * 100)}%</span></div>
-              <input className="thin" aria-label="Monitor volume" type="range" min="0" max="1" step="0.01" value={s.monitorVolume} style={pct(s.monitorVolume)} onChange={e => change({ ...s, monitorVolume: Number(e.target.value) })} /></div>
+              <input className="thin" aria-label="Monitor volume" type="range" min="0" max="1" step="0.01" value={s.monitorVolume} style={pct(s.monitorVolume)} onChange={e => change({ ...s, monitorVolume: Number(e.target.value) })} />
+              <small>How loud everything is in your headphones only. Discord and FiveM always receive the full mix.</small></div>
             <div className="row col"><div className="row-top"><span>Music in my headphones</span><span className="val">{Math.round(s.monitorMusicVolume * 100)}%</span></div>
               <input className="thin" aria-label="Music in my headphones" type="range" min="0" max="1" step="0.01" value={s.monitorMusicVolume} style={pct(s.monitorMusicVolume)} onChange={e => change({ ...s, monitorMusicVolume: Number(e.target.value) })} />
               <small>Listeners always hear music at the Music/Master level; this only changes how loud it is for you.</small></div>
@@ -440,7 +442,7 @@ function App() {
         { id: 'diagnostics', name: 'Diagnostics', body: <><h2>Diagnostics</h2>
             <div className="row"><div className="row-label"><span>Test tone</span><small>1.5 s at 440 Hz into the virtual mic</small></div>
               <button className="btn" disabled={!live || audio.tone || busy} onClick={() => void send({ type: 'tone' })}>{audio.tone ? 'Sending tone…' : 'Send test tone'}</button></div>
-            <div className="row"><div className="row-label"><span>Rescan devices</span></div><button className="btn" onClick={() => void window.micmix.refreshDevices().catch(e => setError(String(e)))}><Icon name="refresh" size={16} />Rescan</button></div>
+            <div className="row"><div className="row-label"><span>Rescan devices</span><small>Look again for microphones and headphones you just plugged in.</small></div><button className="btn" onClick={() => void window.micmix.refreshDevices().catch(e => setError(String(e)))}><Icon name="refresh" size={16} />Rescan</button></div>
             <SampleRates formats={formats} micLabel={microphones.find(d => d.deviceId === micId)?.label ?? null} engine={audio.engine} />
             <div className="row"><div className="row-label"><span>Setup assistant</span><small>Settings, devices, queue and pads are saved automatically.</small></div>
               <button className="btn" onClick={() => { setSettingsOpen(false); setWizard(true); }}>Run setup again</button></div></> },
