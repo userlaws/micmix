@@ -38,11 +38,19 @@ module.exports = async function smoke(ui, worker, root) {
     const done = await waitPhase(['downloaded'], 80);
     await sleep(400);
     await writeFile(path.join(shots, 'shot-update-done.png'), (await ui.webContents.capturePage()).toPNG());
-    // Nothing installs on its own any more: the user presses Restart now (or quits).
-    await sleep(1500);
-    if ((await evalUi(`window.micmix.getUpdate()`)).phase !== 'downloaded') throw new Error('update must wait for the user');
-    await evalUi(`[...document.querySelectorAll('.update-pop button')].find(b => b.textContent.includes('Restart now')).click()`);
-    const end = await waitPhase(['upToDate'], 80);
+    // Guarded automatic restart: a countdown appears only after the idle window (4 s in simulation) with
+    // nothing playing; "Not now" snoozes it; left alone, it restarts by itself.
+    const waitRestart = async (want, limit) => { for (let i = 0; i < limit; i++) { const u = await evalUi(`window.micmix.getUpdate()`); if (u.phase === 'downloaded' && (!!u.restartAt) === want) return u; if (u.phase !== 'downloaded') throw new Error('unexpected phase ' + u.phase); await sleep(150); } throw new Error('countdown ' + (want ? 'never started' : 'never stopped')); };
+    await waitRestart(true, 80);
+    await sleep(600);
+    await writeFile(path.join(shots, 'shot-update-countdown.png'), (await ui.webContents.capturePage()).toPNG());
+    await evalUi(`[...document.querySelectorAll('.update-pop button')].find(b => b.textContent.includes('Not now')).click()`);
+    await waitRestart(false, 20);
+    const snoozed = await evalUi(`window.micmix.getUpdate()`);
+    if (snoozed.restartAt) throw new Error('Not now must clear the countdown');
+    await evalUi(`window.micmix.getAudioState()`); // no UI interaction from here: stays idle
+    await waitRestart(true, 120); // snooze (4 s) then idle again -> new countdown
+    const end = await waitPhase(['upToDate'], 120); // and this time it restarts on its own
     console.log('Update simulation:', JSON.stringify({ mid: mid.phase, done: done.phase, end: end.phase, version: end.version }));
   }
   console.log('Screenshots written:', JSON.stringify(layout));

@@ -54,6 +54,8 @@ if (process.argv.includes('--audio-worker')) {
     onUpdate: subscribe<UpdateStatus>('update:status'),
     checkForUpdates: () => ipcRenderer.invoke('update:check'),
     installUpdate: () => ipcRenderer.invoke('update:install'),
+    snoozeUpdate: () => ipcRenderer.invoke('update:snooze'),
+    activity: () => ipcRenderer.send('ui:activity'),
     updatesSupported: () => ipcRenderer.invoke('update:supported'),
     setUpdateCheck: enabled => ipcRenderer.invoke('config:update-check', enabled),
     setFivemTune: enabled => ipcRenderer.invoke('config:fivem-tune', enabled)

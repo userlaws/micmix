@@ -60,7 +60,7 @@ contextBridge.exposeInMainWorld('micmix', {
   openDonation: ok,
   getUpdate: () => Promise.resolve({ phase: 'idle' }),
   onUpdate: noop,
-  onConfig: noop, onHotkey: noop, setHotkey: () => Promise.resolve(), setCloseToTray: () => Promise.resolve(),
+  onConfig: noop, onHotkey: noop, snoozeUpdate: () => Promise.resolve(), activity: noop, setHotkey: () => Promise.resolve(), setCloseToTray: () => Promise.resolve(),
   checkForUpdates: ok,
   installUpdate: () => Promise.resolve(false),
   updatesSupported: () => Promise.resolve(false),

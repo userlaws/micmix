@@ -177,20 +177,24 @@ function UpdateChip({ status, live, current }: { status: UpdateStatus; live: boo
     window.addEventListener('mousedown', onDown); window.addEventListener('keydown', onKey);
     return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey); };
   }, [open]);
+  const restartAt = status.phase === 'downloaded' ? status.restartAt ?? null : null;
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { if (!restartAt) return; const t = setInterval(() => setNow(Date.now()), 250); return () => clearInterval(t); }, [restartAt]);
+  const seconds = restartAt ? Math.max(0, Math.ceil((restartAt - now) / 1000)) : null;
   const failed = status.phase === 'error' && seenUpdate;
   const active = status.phase === 'available' || status.phase === 'downloading' || status.phase === 'downloaded' || status.phase === 'installing' || failed;
   if (!active) return null;
   const percent = status.phase === 'downloading' ? status.percent : status.phase === 'available' ? 0 : 100;
   const version = 'version' in status ? status.version : '';
   const notes = 'notes' in status ? status.notes : '';
-  const label = status.phase === 'downloading' ? Math.round(percent) + '%' : status.phase === 'downloaded' ? 'Restart to update' : status.phase === 'installing' ? 'Installing…' : failed ? 'Update failed' : 'Update';
+  const label = status.phase === 'downloading' ? Math.round(percent) + '%' : status.phase === 'downloaded' ? (seconds !== null ? 'Restarting in ' + seconds + ' s' : 'Restart to update') : status.phase === 'installing' ? 'Installing…' : failed ? 'Update failed' : 'Update';
   const detail = status.phase === 'downloading' ? mb(status.transferred) + ' of ' + mb(status.total) + ' · ' + mb(status.bytesPerSecond) + '/s'
     : status.phase === 'available' ? 'Preparing download…'
-    : status.phase === 'downloaded' ? 'Downloaded and verified. Restart whenever you like; otherwise it installs the next time you quit.'
+    : status.phase === 'downloaded' ? (seconds !== null ? 'You have been off air and idle for a while, so MicMix will restart itself to finish. Press Not now to wait an hour.' : 'Downloaded and verified. Restart whenever you like. Left alone, MicMix restarts itself once it has been off air and idle for 10 minutes, or installs when you quit.')
     : status.phase === 'installing' ? 'Hang tight, MicMix reopens in a few seconds.'
     : status.phase === 'error' ? status.message : '';
   return <div className={'update-wrap' + (open ? ' open' : '')} ref={wrap}>
-    <button className={'update-chip ' + status.phase} aria-expanded={open} aria-label={'Update ' + label} onClick={() => setOpen(!open)}>
+    <button className={'update-chip ' + status.phase + (seconds !== null ? ' counting' : '')} aria-expanded={open} aria-label={'Update ' + label} onClick={() => setOpen(!open)}>
       <span className={'chip-ring ' + (status.phase === 'downloaded' ? 'done' : failed ? 'bad' : '')} style={{ '--p': percent + '%' } as React.CSSProperties}>
         {status.phase === 'downloaded' ? <Icon name="check" size={12} /> : status.phase === 'downloading' ? null : failed ? <Icon name="close" size={12} /> : <i className="spinner tiny" />}</span>
       <span className="chip-label">{label}</span>
@@ -203,7 +207,8 @@ function UpdateChip({ status, live, current }: { status: UpdateStatus; live: boo
       <div className="pop-actions">
         {status.phase === 'downloaded' && <>
           <button className="btn primary small" disabled={live} title={live ? 'Go off air first' : undefined} onClick={() => { setOpen(false); void window.micmix.installUpdate().catch(() => {}); }}><Icon name="refresh" size={14} />Restart now</button>
-          <button className="btn small" onClick={() => setOpen(false)}>On next quit</button>
+          {seconds !== null ? <button className="btn small" onClick={() => { setOpen(false); void window.micmix.snoozeUpdate().catch(() => {}); }}>Not now</button>
+            : <button className="btn small" onClick={() => setOpen(false)}>Later</button>}
           {live && <small className="pop-live">Go off air first, so an update never cuts your session.</small>}</>}
         {failed && <button className="btn small" onClick={() => { setOpen(false); void window.micmix.checkForUpdates().catch(() => {}); }}><Icon name="refresh" size={14} />Retry</button>}
       </div>
@@ -253,6 +258,13 @@ function App() {
     if (!settingsOpen) return;
     void window.micmix.getEndpointFormats().then(setFormats).catch(() => {});
   }, [settingsOpen, report]);
+  useEffect(() => {
+    // Any real interaction resets the idle clock used for automatic update restarts (at most one ping per 5 s).
+    let last = 0;
+    const ping = () => { const t = Date.now(); if (t - last > 5000) { last = t; window.micmix.activity(); } };
+    for (const type of ['pointerdown', 'keydown', 'wheel']) window.addEventListener(type, ping, { passive: true });
+    return () => { for (const type of ['pointerdown', 'keydown', 'wheel']) window.removeEventListener(type, ping); };
+  }, []);
   const microphones = microphoneChoices(report?.devices ?? []);
   const playbacks = playbackChoices(report?.devices ?? []);
   const cable = !!report && cablePresent(report.devices);

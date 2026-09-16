@@ -18,6 +18,7 @@ export function parseConfig(text: string): SavedConfig {
   if (typeof raw.updateCheck === 'boolean') config.updateCheck = raw.updateCheck;
   if (typeof raw.fivemTune === 'boolean') config.fivemTune = raw.fivemTune;
   if (typeof raw.closeToTray === 'boolean') config.closeToTray = raw.closeToTray;
+  if (raw.resumeHidden === true) config.resumeHidden = true;
   // Per action: an explicit null keeps the shortcut off; anything invalid falls back to the default.
   if (raw.hotkeys && typeof raw.hotkeys === 'object') {
     for (const { action } of APP_HOTKEY_ACTIONS) {

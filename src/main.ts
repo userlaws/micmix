@@ -12,7 +12,7 @@ import { integrationStatus } from './processes';
 import { fivemConfigPath, writeFivemVoice } from './fivem-config';
 import { existsSync } from 'node:fs';
 import { readEndpointFormats } from './audio-formats';
-import { checkForUpdates, installUpdate, updateStatus, onUpdateStatus, updatesSupported } from './updates';
+import { checkForUpdates, installUpdate, updateStatus, onUpdateStatus, updatesSupported, simulate as simulateUpdates } from './updates';
 import { youtubeInput } from './youtube-url';
 import { YouTubeView } from './youtube-view';
 import { YouTubeSearch } from './youtube-search';
@@ -67,6 +67,7 @@ function publishAudio(state: AudioState) {
   audioState = state;
   if (restored) { config.settings = state.settings; scheduleSave(); }
   if (ui && !ui.isDestroyed()) ui.webContents.send('audio:state', state);
+  if ((state.status !== 'off' || state.playing) && restartAt) cancelRestart();
   refreshTray();
 }
 function cancelPending(reason: string) {
@@ -171,10 +172,13 @@ function refreshTray() {
   const current = audioState.queue[audioState.index];
   const update = updateStatus();
   const ready = update.phase === 'downloaded' ? update.version : null;
-  tray.setToolTip((live ? 'MicMix · LIVE' + (current ? ' · ' + (audioState.playing ? 'Playing ' : 'Paused ') + current.title : '') : 'MicMix · Off air') + (ready ? ' · Update ' + ready + ' ready' : ''));
+  const countdown = restartAt ? Math.max(0, Math.ceil((restartAt - Date.now()) / 1000)) : null;
+  tray.setToolTip((live ? 'MicMix · LIVE' + (current ? ' · ' + (audioState.playing ? 'Playing ' : 'Paused ') + current.title : '') : 'MicMix · Off air')
+    + (countdown !== null ? ' · Restarting to update in ' + countdown + ' s' : ready ? ' · Update ' + ready + ' ready' : ''));
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show MicMix', click: () => toggleWindow(true) },
     ...(ready ? [{ label: 'Restart to update to ' + ready, enabled: !live, click: () => { installUpdate(); } }] : []),
+    ...(countdown !== null ? [{ label: 'Not now (ask again in an hour)', click: () => snoozeRestart() }] : []),
     { type: 'separator' },
     { label: live ? 'Go off air' : audioState.status === 'starting' ? 'Cancel start' : 'Go live', click: () => runHotkey('live') },
     { label: audioState.playing ? 'Pause music' : 'Play music', enabled: live && !!current, click: () => runHotkey('playPause') },
@@ -278,8 +282,41 @@ function protect(win: BrowserWindow) {
 // Installing is always the user's call (header chip, tray menu or Settings); MicMix never restarts itself.
 // A downloaded update that is ignored installs on the next quit (autoInstallOnAppQuit).
 let updateTimer: NodeJS.Timeout | null = null;
-function publishUpdate() { if (ui && !ui.isDestroyed()) ui.webContents.send('update:status', updateStatus()); }
-onUpdateStatus(() => { publishUpdate(); refreshTray(); });
+// Automatic restart, guarded: only once an update is downloaded AND MicMix has been OFF AIR with no music
+// playing and no interaction for IDLE_MS (hidden in the tray counts as idle). A 60 s countdown shows in the
+// chip and tray first; "Not now" snoozes it for an hour; going live or pressing play cancels it outright.
+const IDLE_MS = Number(process.env.MICMIX_UPDATE_IDLE_MS) || (simulateUpdates ? 4000 : 10 * 60 * 1000);
+const COUNTDOWN_MS = Number(process.env.MICMIX_UPDATE_COUNTDOWN_MS) || (simulateUpdates ? 5000 : 60 * 1000);
+const SNOOZE_MS = Number(process.env.MICMIX_UPDATE_SNOOZE_MS) || (simulateUpdates ? 4000 : 60 * 60 * 1000);
+let lastActivity = Date.now();
+let snoozedUntil = 0;
+let restartAt: number | null = null;
+let restartTimer: NodeJS.Timeout | null = null;
+function noteActivity() { lastActivity = Date.now(); if (restartAt) cancelRestart(); }
+function viewUpdate() { const s = updateStatus(); return s.phase === 'downloaded' ? { ...s, restartAt } : s; }
+function publishUpdate() { if (ui && !ui.isDestroyed()) ui.webContents.send('update:status', viewUpdate()); }
+function cancelRestart() {
+  if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
+  if (restartAt !== null) { restartAt = null; publishUpdate(); refreshTray(); }
+}
+function updateIdle() { return audioState.status === 'off' && !audioState.playing && Date.now() - lastActivity >= IDLE_MS; }
+function planRestart() {
+  if (restartAt !== null || updateStatus().phase !== 'downloaded' || !config.setupDone) return;
+  if (Date.now() < snoozedUntil || !updateIdle()) return;
+  restartAt = Date.now() + COUNTDOWN_MS;
+  restartTimer = setTimeout(() => {
+    restartTimer = null;
+    if (!updateIdle() || updateStatus().phase !== 'downloaded') { cancelRestart(); return; }
+    // Come back the way we left: hidden in the tray stays hidden.
+    config.resumeHidden = !!ui && !ui.isDestroyed() && !ui.isVisible();
+    flushConfig();
+    if (!installUpdate()) { config.resumeHidden = false; cancelRestart(); }
+  }, COUNTDOWN_MS);
+  publishUpdate(); refreshTray();
+}
+function snoozeRestart() { snoozedUntil = Date.now() + SNOOZE_MS; cancelRestart(); }
+setInterval(planRestart, simulateUpdates ? 500 : 30 * 1000);
+onUpdateStatus(() => { publishUpdate(); refreshTray(); planRestart(); });
 function scheduleUpdateCheck() {
   if (updateTimer) { clearTimeout(updateTimer); updateTimer = null; }
   if (!config.updateCheck || !updatesSupported) return;
@@ -415,10 +452,12 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle('integrations:get', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return integrations; });
   ipcMain.handle('devices:formats', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return readEndpointFormats(); });
-  ipcMain.handle('update:get', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return updateStatus(); });
+  ipcMain.handle('update:get', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return viewUpdate(); });
+  ipcMain.handle('update:snooze', event => { if (!fromUi(event)) throw new Error('Unauthorized'); snoozeRestart(); });
+  ipcMain.on('ui:activity', event => { if (fromUi(event)) noteActivity(); });
   ipcMain.handle('update:supported', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return updatesSupported; });
   ipcMain.handle('update:check', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return checkForUpdates(); });
-  ipcMain.handle('update:install', event => { if (!fromUi(event)) throw new Error('Unauthorized'); return installUpdate(); });
+  ipcMain.handle('update:install', event => { if (!fromUi(event)) throw new Error('Unauthorized'); cancelRestart(); return installUpdate(); });
   ipcMain.handle('config:update-check', (event, enabled: boolean) => {
     if (!fromUi(event)) throw new Error('Unauthorized');
     config.updateCheck = enabled === true; scheduleSave();
@@ -539,9 +578,17 @@ app.whenReady().then(async () => {
       }
     });
     createTray();
+    ui.on('focus', noteActivity); ui.on('show', noteActivity);
     await ui.loadFile(path.join(__dirname, 'index.html'));
-    ui.show();
-    ui.focus();
+    if (config.resumeHidden && config.closeToTray && !smokeTest) {
+      // Relaunched by an automatic update while parked in the tray: stay there.
+      config.resumeHidden = false; flushConfig();
+      lastActivity = Date.now();
+    } else {
+      config.resumeHidden = false;
+      ui.show();
+      ui.focus();
+    }
     scheduleUpdateCheck();
   }
   timeout = setTimeout(() => {

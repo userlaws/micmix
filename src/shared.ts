@@ -45,10 +45,12 @@ export type UpdateStatus =
   | { phase: 'upToDate'; version: string; at: number }
   | { phase: 'available'; version: string; notes: string }
   | { phase: 'downloading'; version: string; percent: number; transferred: number; total: number; bytesPerSecond: number; notes: string }
-  | { phase: 'downloaded'; version: string; notes: string }
+  // restartAt: epoch ms of a scheduled automatic restart (only while idle and off air), null when none is planned.
+  | { phase: 'downloaded'; version: string; notes: string; restartAt?: number | null }
   | { phase: 'installing'; version: string }
   | { phase: 'error'; message: string; at: number };
-export interface SavedConfig extends SetupConfig { version: 1; settings: MixerSettings; queue: LocalTrack[]; pads: (SoundPad | null)[] }
+// resumeHidden: set right before an automatic update restart while the window sat in the tray, so the relaunch stays there.
+export interface SavedConfig extends SetupConfig { version: 1; settings: MixerSettings; queue: LocalTrack[]; pads: (SoundPad | null)[]; resumeHidden?: boolean }
 export interface MicMixBridge {
   searchYouTube(query: string): Promise<YouTubeResult[] | null>;
   cancelYouTubeSearch(): Promise<void>;
@@ -83,6 +85,8 @@ export interface MicMixBridge {
   onUpdate(callback: (status: UpdateStatus) => void): () => void;
   checkForUpdates(): Promise<void>;
   installUpdate(): Promise<boolean>;
+  snoozeUpdate(): Promise<void>;
+  activity(): void;
   updatesSupported(): Promise<boolean>;
   setUpdateCheck(enabled: boolean): Promise<void>;
   setFivemTune(enabled: boolean): Promise<void>;

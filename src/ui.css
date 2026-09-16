@@ -118,6 +118,7 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .update-chip:hover { background: rgba(255, 255, 255, 0.1); }
 .update-chip.downloaded { border-color: rgba(48, 209, 88, 0.45); color: var(--text); }
 .update-chip.error { border-color: rgba(245, 158, 11, 0.5); }
+.update-chip.counting { border-color: rgba(245, 158, 11, 0.55); background: rgba(245, 158, 11, 0.1); font-variant-numeric: tabular-nums; }
 .chip-ring { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; position: relative; flex: none;
   background: conic-gradient(var(--sky) 0, var(--violet) calc(var(--p, 0%) * 0.6), var(--pink) var(--p, 0%), rgba(255, 255, 255, 0.12) var(--p, 0%)); }
 .chip-ring::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: #0f172e; }
