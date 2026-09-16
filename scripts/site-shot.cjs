@@ -11,7 +11,7 @@ const scale = Number(process.argv.find(a => a.startsWith('--scale='))?.slice('--
 const WIDTH = 1400, HEIGHT = 920;
 
 app.whenReady().then(async () => {
-  const win = new BrowserWindow({ width: WIDTH, height: HEIGHT, show: false, backgroundColor: '#0f1116', useContentSize: true,
+  const win = new BrowserWindow({ width: WIDTH, height: HEIGHT, show: false, backgroundColor: '#071126', useContentSize: true,
     webPreferences: { preload: path.join(__dirname, 'site-shot-preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true,
       additionalArguments: ['--app-version=' + version] } });
   await win.loadFile(path.join(root, 'dist', 'index.html'));
