@@ -23,7 +23,7 @@ const state = {
     levels: { mic: 1, music: 0.72, soundboard: 0.85, master: 1 },
     muted: { mic: false, music: false, soundboard: false, master: false },
     ducking: true, duckThreshold: -30, duckDb: -8,
-    mono: false, monitor: true, monitorMic: false, monitorVolume: 0.7, monitorMusicVolume: 1, voiceHeadroom: true,
+    mono: false, monitor: true, monitorMic: false, monitorVolume: 0.7, monitorMusicVolume: 1, voiceHeadroom: true, autoplay: true,
   },
   pads: [pad(0, 'Airhorn', 'Ctrl+Shift+F1'), pad(1, 'Applause', 'Ctrl+Shift+F2'), pad(2, 'Bruh', 'Ctrl+Shift+F3'),
     pad(3, 'Drum roll', 'Ctrl+Shift+F4'), pad(4, 'Laugh track', null), pad(5, 'Trombone', null), null, null, null],

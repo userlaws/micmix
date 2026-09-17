@@ -420,7 +420,14 @@ function App() {
           </div>
         </div>}
         <div className="queue-head"><h2>Up next <span className="count">{audio.queue.length}</span></h2>
-          <button className="btn small" disabled={!audio.queue.length || busy} onClick={() => void send({ type: 'clear' })}>Clear</button></div>
+          <div className="queue-actions">
+            <div className="autoplay" title="On: when a song ends, the next one in the queue starts by itself. Off: playback stops after each song.">
+              <span>Autoplay</span>
+              <Switch checked={audio.settings.autoplay} disabled={busy} label="Autoplay the queue"
+                onChange={next => void send({ type: 'settings', settings: { ...audio.settings, autoplay: next } }, false)} />
+            </div>
+            <button className="btn small" disabled={!audio.queue.length || busy} onClick={() => void send({ type: 'clear' })}>Clear</button>
+          </div></div>
         <ol className="queue">{audio.queue.map((track, index) => <li key={track.id + '-' + index} className={index === audio.index ? 'current' : ''}>
           <button className="queue-track" disabled={busy} onClick={() => void send({ type: 'select', index })}>
             <span className="num">{index + 1}</span><span className="title">{track.title}</span><span className="kind">{track.youtubeId ? 'YouTube' : 'File'}</span></button>

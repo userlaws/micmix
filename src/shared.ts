@@ -139,6 +139,8 @@ export interface MixerSettings {
   mono: boolean; monitor: boolean; monitorMic: boolean; monitorVolume: number; monitorMusicVolume: number;
   // voiceHeadroom: the mic gets its own limiter beside the shared one, so loud music never modulates speech.
   voiceHeadroom: boolean;
+  // autoplay: when a track ends, start the next one in the queue. Off by default - one song at a time.
+  autoplay: boolean;
 }
 export interface Meters {
   mic: number; music: number; soundboard: number; master: number; ducking: boolean; reduction: number; overload: boolean;
@@ -154,7 +156,9 @@ export const defaultSettings: MixerSettings = {
   ducking: true, duckThreshold: -30, duckDb: -8,
   // monitorMusicVolume scales music/pads in YOUR headphones only, never the outgoing mix.
   mono: false, monitor: true, monitorMic: false, monitorVolume: 0.7, monitorMusicVolume: 1,
-  voiceHeadroom: true
+  voiceHeadroom: true,
+  // Off by default: the operator decides when the next song goes out, rather than the queue rolling on.
+  autoplay: false
 };
 export const emptyMeters: Meters = { mic: 0, music: 0, soundboard: 0, master: 0, ducking: false, reduction: 0, overload: false, voiceReduction: 0 };
 export function initialAudioState(): AudioState {

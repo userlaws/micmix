@@ -25,9 +25,13 @@ module.exports = async function smoke(ui, worker, root, registerFiles, youtube, 
     for (let i = 0; i < 100; i++) { if ((await evalUi(`!!document.querySelector(${JSON.stringify(selector)})`)) === present) return; await sleep(100); }
     throw new Error('Timed out waiting for ' + selector + ' present=' + present);
   };
-  // 1. Fresh profile: the wizard must show, and the config file must not exist yet.
+  // 1. Fresh profile: the wizard must show and nothing may claim setup is already done.
+  // The config save is debounced ~500 ms after launch, so by the time the wizard is in the DOM the
+  // file may legitimately exist already; what must hold is that it does not report setupDone.
   await waitForDom('.wizard');
-  await assert.rejects(readFile(helpers.configPath()), 'config.json must not exist before setup');
+  const early = await readFile(helpers.configPath(), 'utf8').catch(() => null);
+  assert.equal(early === null || JSON.parse(early).setupDone === false, true,
+    'a fresh profile must not come up already set up, got ' + early);
   const click = text => evalUi(`(() => { const b = [...document.querySelectorAll('.wizard button')].find(b => b.textContent.trim().startsWith(${JSON.stringify(text)})); if (!b || b.disabled) throw new Error('Wizard button unavailable: ' + ${JSON.stringify(text)}); b.click(); return true; })()`);
   await writeFile(path.join(root, 'artifacts', 'phase4-wizard.png'), (await ui.webContents.capturePage()).toPNG());
   await click('Next'); // virtual mic present

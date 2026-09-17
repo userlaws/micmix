@@ -37,7 +37,8 @@ Windows 11 · Electron + React + TypeScript · no account, no cloud, no download
    press **Play**. Assign clips to the
    **Soundboard** (Edit → Choose clip) and give them global hotkeys that work
    even in-game. Everything mixes under the **Mic / Music / Pads / Master**
-   faders.
+   faders. Playback stops at the end of each song unless you turn on
+   **Autoplay** beside **Up next**, which starts the next queued song by itself.
 
 5. **Balance and check yourself.** Leave **Duck on talk** on so music dips while
    you speak. Use **Headphone monitor** to hear your mix without your own mic by

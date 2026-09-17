@@ -25,7 +25,9 @@ let captureReady: Promise<void> | null = null;
 // PAUSED or BUFFERING in the same breath as ENDED, which cleared the flag first and silently stopped
 // the queue. Only an explicit pause (or going off air) should end playback, so intent is tracked here.
 let paused = true;
-let advancedVersion = -1;
+// The mediaVersion whose end has already been handled, so a duplicate ENDED cannot double-skip.
+// Playing or seeking clears it: replaying a track that already finished must end - and advance - again.
+let endedVersion = -1;
 let state = initialAudioState();
 // Soundboard clips are decoded once per registered file and replayed from memory.
 const padBuffers = new Map<string, AudioBuffer>();
@@ -34,6 +36,10 @@ let padsVersion = 0;
 function publish(patch: Partial<AudioState>) {
   state = { ...state, ...patch };
   window.audioHost.state(state);
+}
+// A finished track only rolls on to the next one when the operator asked for it.
+function advanceOnEnd() {
+  return state.settings.autoplay && state.index + 1 < state.queue.length;
 }
 function releaseCapture() {
   youtubeSource?.disconnect(); youtubeSource = null;
@@ -212,7 +218,7 @@ function loadTrack(index: number, autoPlay: boolean, position = 0) {
   };
   audio.onended = () => {
     if (!active()) return;
-    if (state.index + 1 < state.queue.length) loadTrack(state.index + 1, true);
+    if (advanceOnEnd()) loadTrack(state.index + 1, true);
     else { paused = true; publish({ playing: false, position: audio.duration }); }
   };
   audio.src = track.url;
@@ -222,7 +228,7 @@ function loadTrack(index: number, autoPlay: boolean, position = 0) {
 async function play() {
   if (state.status !== 'live' || !context) throw new Error('Go LIVE before playing music.');
   if (state.index < 0 || !state.queue.length) throw new Error('Add a local audio file first.');
-  paused = false;
+  paused = false; endedVersion = -1;
   if (state.queue[state.index].youtubeId) {
     const version = mediaVersion, intent = ++playIntent;
     await youtubeReady;
@@ -311,12 +317,12 @@ export function youtubeUpdate(update: YouTubeUpdate) {
   else if (update.playerState === 2 || update.playerState === 5) { patch.playing = false; patch.buffering = false; }
   if (update.playerState === 0) {
     // YouTube can deliver ENDED more than once for the same video (onStateChange plus infoDelivery),
-    // so the advance is tied to this track's mediaVersion and can only happen once.
-    const advance = !paused && state.status === 'live' && advancedVersion !== mediaVersion;
-    advancedVersion = mediaVersion;
+    // so the end of a track is handled once per mediaVersion.
+    const ended = !paused && state.status === 'live' && endedVersion !== mediaVersion;
+    endedVersion = mediaVersion;
     publish({ ...patch, playing: false, buffering: false });
-    if (advance) {
-      if (state.index + 1 < state.queue.length) loadTrack(state.index + 1, true);
+    if (ended) {
+      if (advanceOnEnd()) loadTrack(state.index + 1, true);
       else paused = true;
     }
     return;
@@ -411,6 +417,7 @@ export async function command(value: AudioCommand) {
       break;
     case 'select': loadTrack(value.index, !paused); break;
     case 'seek':
+      endedVersion = -1;
       if (activeYoutubeId) { await window.audioHost.youtube({ type: 'seek', seconds: value.seconds }); publish({ position: value.seconds }); break; }
       if (!element || !Number.isFinite(element.duration)) throw new Error('Wait for the file to load before seeking.');
       element.currentTime = Math.min(value.seconds, element.duration);

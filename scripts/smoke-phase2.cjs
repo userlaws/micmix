@@ -58,6 +58,13 @@ module.exports = async function smoke(ui, worker, root, registerFiles) {
       await window.micmix.command({ type: 'select', index: 0 }); await waitFor(s => s.duration > 0);
       await window.micmix.command({ type: 'seek', seconds: 0.5 });
       state = await window.micmix.getAudioState(); assert(Math.abs(state.position - 0.5) < 0.05, 'Seek failed');
+      // Autoplay is off by default: the finished track must stay put and stop playing.
+      await window.micmix.command({ type: 'play' });
+      await waitFor(s => s.index === 0 && !s.playing && s.position > 1);
+      state = await window.micmix.getAudioState(); assert(state.index === 0, 'Autoplay off still advanced the queue');
+      // With autoplay on the queue rolls on to the next track by itself.
+      await window.micmix.command({ type: 'settings', settings: { ...settings, autoplay: true } });
+      await window.micmix.command({ type: 'seek', seconds: 0.5 });
       await window.micmix.command({ type: 'play' });
       await waitFor(s => s.index === 1 && s.playing);
       await window.micmix.command({ type: 'pause' });
