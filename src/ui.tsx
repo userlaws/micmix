@@ -333,22 +333,23 @@ function App() {
   const current = audio.queue[audio.index];
   const overlay = wizard || settingsOpen;
   useLayoutEffect(() => {
-    // The YouTube BrowserView always paints above the page, so it is hidden whenever a sheet covers the UI.
-    let frame = 0;
+    // The YouTube BrowserView always paints above the page, so it reports no slot whenever a sheet
+    // covers the UI. Main parks the view out of sight rather than detaching it, because capture only
+    // works on an attached view. Measured synchronously and never nulled on a dependency change:
+    // requestAnimationFrame does not run while the window is hidden to the tray, so a deferred update
+    // could leave the view with stale bounds for as long as the window stayed hidden.
     const update = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        const rect = videoSlot.current?.getBoundingClientRect();
-        window.micmix.videoBounds(rect && !overlay && rect.top >= 0 && rect.left >= 0 && rect.bottom <= window.innerHeight && rect.right <= window.innerWidth ?
-          { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null);
-      });
+      const rect = videoSlot.current?.getBoundingClientRect();
+      window.micmix.videoBounds(rect && !overlay && rect.top >= 0 && rect.left >= 0 && rect.bottom <= window.innerHeight && rect.right <= window.innerWidth ?
+        { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null);
     };
     const observer = new ResizeObserver(update);
     if (videoSlot.current) observer.observe(videoSlot.current);
     window.addEventListener('resize', update); window.addEventListener('scroll', update, true);
     update();
-    return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener('resize', update); window.removeEventListener('scroll', update, true); window.micmix.videoBounds(null); };
+    return () => { observer.disconnect(); window.removeEventListener('resize', update); window.removeEventListener('scroll', update, true); };
   }, [current?.youtubeId, current?.title, overlay, error, audio.error, source, audio.queue.length, browsingYouTube]);
+  useEffect(() => () => window.micmix.videoBounds(null), []);
   const canGoLive = !(busy || !micId || !cable || !report?.setSinkIdSupported || (audio.settings.monitor && !monitorId));
   liveHotkey.current = () => {
     if (wizard) return;

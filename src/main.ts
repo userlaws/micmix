@@ -83,7 +83,7 @@ function runCommand(command: AudioCommand) {
       pending.delete(id);
       if (worker && !worker.isDestroyed()) worker.webContents.send('audio:command', ++commandId, { type: 'stop' });
       reject(new Error('Audio command timed out. Output stopped; check microphone permissions and retry.'));
-    }, 15000);
+    }, command.type === 'play' ? 45000 : 15000);
     pending.set(id, { resolve, reject, timer });
     worker!.webContents.send('audio:command', id, command);
   });

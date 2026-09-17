@@ -18,6 +18,9 @@
     "check:capture": "npm run build && node scripts/run-capture-probe.mjs",
     "check:youtube": "npm run build && node scripts/run-capture-probe.mjs --youtube",
     "check:youtube-search": "npm run build && node scripts/check-youtube-search.mjs",
+    "check:autoplay": "node scripts/check-autoplay.mjs",
+    "check:capture-attach": "node scripts/start.mjs --smoke-capture-attach",
+    "check:capture-reuse": "node scripts/start.mjs --smoke-capture-reuse",
     "dist:win": "npm run build && electron-builder --win nsis --publish never",
     "pack:dir": "npm run build && electron-builder --dir"
   },

@@ -3,10 +3,21 @@ import path from 'node:path';
 import type { VideoBounds, YouTubeCommand, YouTubeUpdate } from './shared';
 import { youtubeError } from './youtube-url';
 
+// getDisplayMedia can only capture a BrowserView that is ATTACHED to a window: a detached one
+// fails with "Timeout starting video source" (scripts/smoke-capture-attach.cjs). So once a video
+// is loaded the view is never removed - when the UI reports no visible slot it is parked as a
+// single pixel in the bottom-right corner instead. Detaching it used to break auto-advance,
+// because the UI drops the slot whenever the current track changes, a sheet opens, or the window
+// goes to the tray. The pixel sits inside the window on purpose: a view parked fully off the
+// window does not always get a compositor surface, and then the first capture of a session times
+// out.
+const PARK_SIZE = 1;
+
 export class YouTubeView {
   readonly view: BrowserView;
   private videoId = '';
   private attached = false;
+  private slot: VideoBounds | null = null;
   private generation = 0;
   private pending: { resolve(): void; reject(error: Error): void; timer: NodeJS.Timeout } | null = null;
   constructor(private host: BrowserWindow, private emit: (update: YouTubeUpdate) => void) {
@@ -35,13 +46,21 @@ export class YouTubeView {
     return this.view.webContents.mainFrame;
   }
   bounds(bounds: VideoBounds | null) {
-    if (this.host.isDestroyed()) return;
-    if (!bounds || bounds.width < 200 || bounds.height < 200) {
-      if (this.attached) this.host.removeBrowserView(this.view);
-      this.attached = false; return;
+    this.slot = bounds && bounds.width >= 200 && bounds.height >= 200 ? bounds : null;
+    this.place();
+  }
+  private place() {
+    if (this.host.isDestroyed() || this.view.webContents.isDestroyed()) return;
+    if (!this.videoId) {
+      if (this.attached) { this.host.removeBrowserView(this.view); this.attached = false; }
+      return;
     }
     if (!this.attached) { this.host.addBrowserView(this.view); this.attached = true; }
-    this.view.setBounds(bounds);
+    const content = this.host.getContentBounds();
+    this.view.setBounds(this.slot ?? {
+      x: Math.max(0, content.width - PARK_SIZE), y: Math.max(0, content.height - PARK_SIZE),
+      width: PARK_SIZE, height: PARK_SIZE
+    });
   }
   event(event: IpcMainEvent, data: { event?: string; value?: number; playerState?: number; position?: number; duration?: number; title?: string }) {
     if (event.sender !== this.view.webContents || event.senderFrame !== this.frame()) return;
@@ -60,6 +79,7 @@ export class YouTubeView {
       if (this.pending) { clearTimeout(this.pending.timer); this.pending.reject(new Error('YouTube load replaced.')); this.pending = null; }
       const generation = ++this.generation;
       this.videoId = command.videoId;
+      this.place();
       const ready = new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => this.fail('YouTube did not become ready. Check your connection and try another link.'), 15000);
         this.pending = { resolve, reject, timer };
@@ -84,6 +104,8 @@ export class YouTubeView {
   }
   close() {
     ++this.generation;
+    this.videoId = '';
+    if (this.attached && !this.host.isDestroyed()) { this.host.removeBrowserView(this.view); this.attached = false; }
     if (this.pending) { clearTimeout(this.pending.timer); this.pending.reject(new Error('YouTube player closed.')); this.pending = null; }
     if (!this.view.webContents.isDestroyed()) this.view.webContents.close();
   }

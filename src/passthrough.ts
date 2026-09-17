@@ -20,6 +20,12 @@ let youtubeStream: MediaStream | null = null;
 let youtubeSource: MediaStreamAudioSourceNode | null = null;
 let activeYoutubeId: string | null = null;
 let youtubeReady: Promise<void> = Promise.resolve();
+let captureReady: Promise<void> | null = null;
+// Auto-advance must not read state.playing at the moment a track ends: the YouTube player can report
+// PAUSED or BUFFERING in the same breath as ENDED, which cleared the flag first and silently stopped
+// the queue. Only an explicit pause (or going off air) should end playback, so intent is tracked here.
+let paused = true;
+let advancedVersion = -1;
 let state = initialAudioState();
 // Soundboard clips are decoded once per registered file and replayed from memory.
 const padBuffers = new Map<string, AudioBuffer>();
@@ -29,13 +35,21 @@ function publish(patch: Partial<AudioState>) {
   state = { ...state, ...patch };
   window.audioHost.state(state);
 }
+function releaseCapture() {
+  youtubeSource?.disconnect(); youtubeSource = null;
+  youtubeStream?.getTracks().forEach(track => track.stop()); youtubeStream = null;
+  captureReady = null;
+}
 function disposeMusic() {
   ++playIntent;
   ++mediaVersion;
   if (activeYoutubeId) void window.audioHost.youtube({ type: 'pause' }).catch(() => {});
   activeYoutubeId = null;
-  youtubeSource?.disconnect(); youtubeSource = null;
-  youtubeStream?.getTracks().forEach(track => track.stop()); youtubeStream = null;
+  // The captured YouTube stream is deliberately kept here: it belongs to the LIVE session, not to
+  // a track. getDisplayMedia keeps delivering the view's audio across navigations and even while
+  // the view is detached (scripts/smoke-capture-reuse.cjs), whereas a fresh request for a just
+  // navigated view often fails with "Timeout starting video source" for about ten seconds - which
+  // is what silently stopped the queue whenever one YouTube song auto-advanced to the next.
   if (element) {
     element.onended = element.onerror = element.onloadedmetadata = element.onpause = element.onplaying = null;
     element.pause(); element.removeAttribute('src'); element.load();
@@ -44,6 +58,7 @@ function disposeMusic() {
 }
 export function stop(error: string | null = null) {
   ++epoch;
+  paused = true;
   stopPads();
   const position = element && Number.isFinite(element.currentTime) ? element.currentTime : state.position;
   disposeMusic();
@@ -57,6 +72,7 @@ export function stop(error: string | null = null) {
   graph = null;
   if (oscillator) { oscillator.onended = null; oscillator.stop(); oscillator.disconnect(); }
   oscillator = null;
+  releaseCapture();
   stream?.getTracks().forEach(track => track.stop()); stream = null;
   bridge?.stream.getTracks().forEach(track => track.stop()); bridge = null;
   const previousContexts = [context, monitorContext];
@@ -167,6 +183,7 @@ function loadTrack(index: number, autoPlay: boolean, position = 0) {
   if (!state.queue[index]) throw new Error('This queue item no longer exists.');
   const track = state.queue[index];
   disposeMusic();
+  if (autoPlay) paused = false;
   publish({ index, position, duration: 0, playing: false, buffering: false, error: null });
   if (track.youtubeId) {
     activeYoutubeId = track.youtubeId;
@@ -196,7 +213,7 @@ function loadTrack(index: number, autoPlay: boolean, position = 0) {
   audio.onended = () => {
     if (!active()) return;
     if (state.index + 1 < state.queue.length) loadTrack(state.index + 1, true);
-    else publish({ playing: false, position: audio.duration });
+    else { paused = true; publish({ playing: false, position: audio.duration }); }
   };
   audio.src = track.url;
   audio.load();
@@ -205,6 +222,7 @@ function loadTrack(index: number, autoPlay: boolean, position = 0) {
 async function play() {
   if (state.status !== 'live' || !context) throw new Error('Go LIVE before playing music.');
   if (state.index < 0 || !state.queue.length) throw new Error('Add a local audio file first.');
+  paused = false;
   if (state.queue[state.index].youtubeId) {
     const version = mediaVersion, intent = ++playIntent;
     await youtubeReady;
@@ -223,29 +241,60 @@ async function play() {
   }
   publish({ playing: true });
 }
+// Chromium regularly answers the first request for a freshly navigated view with
+// "Timeout starting video source" after about ten seconds, so the request gets one retry.
+// This only runs once per LIVE session now, never once per track.
+async function requestCapture(current: () => boolean): Promise<MediaStream> {
+  let last: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (!current()) throw new Error('Playback cancelled.');
+    try {
+      // getDisplayMedia requires a video request. Its video track is discarded straight away;
+      // the only source main ever grants is the YouTube BrowserView's own webContents.
+      return await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 1 }, audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      });
+    } catch (error) {
+      last = error;
+      await new Promise(resolve => setTimeout(resolve, 400));
+    }
+  }
+  throw new Error('Electron could not capture the YouTube audio (' +
+    (last instanceof Error ? last.message : String(last)) + '). Select the video again to retry.');
+}
+// One capture for the whole LIVE session, shared by every YouTube track in the queue.
+function captureYouTube(): Promise<void> {
+  if (youtubeStream?.getAudioTracks().some(track => track.readyState === 'live')) return Promise.resolve();
+  if (captureReady) return captureReady;
+  const operation = epoch;
+  const ctx = context;
+  const attempt = (async () => {
+    if (!ctx || !graph || state.status !== 'live') throw new Error('Go LIVE before playing YouTube audio.');
+    const captured = await requestCapture(() => operation === epoch && ctx === context);
+    if (operation !== epoch || ctx !== context || !graph) { captured.getTracks().forEach(t => t.stop()); throw new Error('Playback cancelled.'); }
+    captured.getVideoTracks().forEach(t => t.stop());
+    if (!captured.getAudioTracks().length) { captured.getTracks().forEach(t => t.stop()); throw new Error('Electron did not provide YouTube audio. Select the video again to retry.'); }
+    youtubeStream = new MediaStream(captured.getAudioTracks());
+    youtubeSource = ctx.createMediaStreamSource(youtubeStream);
+    youtubeSource.connect(graph.music);
+    youtubeStream.getAudioTracks().forEach(track => track.addEventListener('ended', () => {
+      if (operation !== epoch) return;
+      releaseCapture();
+      void window.audioHost.youtube({ type: 'pause' }).catch(() => {});
+      publish({ playing: false, error: 'YouTube audio capture ended. Select the video again to retry.' });
+    }));
+  })();
+  captureReady = attempt;
+  // A failed request must not poison the session: clear it so the next track can try again.
+  attempt.catch(() => { if (captureReady === attempt) captureReady = null; });
+  return attempt;
+}
 async function prepareYouTube(track: LocalTrack, position: number, autoPlay: boolean, version: number) {
   await window.audioHost.youtube({ type: 'load', videoId: track.youtubeId!, position });
   if (version !== mediaVersion) return;
   if (!context || !graph || state.status !== 'live') return;
-  const ctx = context;
-  // getDisplayMedia requires a video request. Discard its video track immediately;
-  // the only audio source granted by main is the YouTube BrowserView's webContents.
-  const captured = await navigator.mediaDevices.getDisplayMedia({
-    video: { frameRate: 1 }, audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-  });
-  if (version !== mediaVersion || ctx !== context || !graph) { captured.getTracks().forEach(t => t.stop()); return; }
-  captured.getVideoTracks().forEach(t => t.stop());
-  if (!captured.getAudioTracks().length) { captured.getTracks().forEach(t => t.stop()); throw new Error('Electron did not provide YouTube audio. Select the video again to retry.'); }
-  youtubeStream = new MediaStream(captured.getAudioTracks());
-  youtubeSource = ctx.createMediaStreamSource(youtubeStream);
-  youtubeSource.connect(graph.music);
-  youtubeStream.getAudioTracks().forEach(t => t.addEventListener('ended', () => {
-    if (version === mediaVersion) {
-      youtubeSource?.disconnect(); youtubeSource = null; youtubeStream = null;
-      void window.audioHost.youtube({ type: 'pause' }).catch(() => {});
-      publish({ playing: false, error: 'YouTube audio capture ended. Select the video again to retry.' });
-    }
-  }));
+  await captureYouTube();
+  if (version !== mediaVersion || state.status !== 'live') return;
   if (autoPlay) await window.audioHost.youtube({ type: 'play' });
 }
 export function youtubeUpdate(update: YouTubeUpdate) {
@@ -261,9 +310,15 @@ export function youtubeUpdate(update: YouTubeUpdate) {
   } else if (update.playerState === 3) patch.buffering = true;
   else if (update.playerState === 2 || update.playerState === 5) { patch.playing = false; patch.buffering = false; }
   if (update.playerState === 0) {
-    const advance = state.playing && state.status === 'live';
+    // YouTube can deliver ENDED more than once for the same video (onStateChange plus infoDelivery),
+    // so the advance is tied to this track's mediaVersion and can only happen once.
+    const advance = !paused && state.status === 'live' && advancedVersion !== mediaVersion;
+    advancedVersion = mediaVersion;
     publish({ ...patch, playing: false, buffering: false });
-    if (advance && state.index + 1 < state.queue.length) loadTrack(state.index + 1, true);
+    if (advance) {
+      if (state.index + 1 < state.queue.length) loadTrack(state.index + 1, true);
+      else paused = true;
+    }
     return;
   }
   if (Object.keys(patch).length) publish(patch);
@@ -346,14 +401,15 @@ export async function command(value: AudioCommand) {
       break;
     case 'play': await play(); break;
     case 'pause':
+      paused = true;
       ++playIntent;
       if (activeYoutubeId) await window.audioHost.youtube({ type: 'pause' });
       element?.pause(); publish({ playing: false }); break;
     case 'next':
-      if (state.index + 1 < state.queue.length) loadTrack(state.index + 1, state.playing);
-      else { element?.pause(); if (activeYoutubeId) await window.audioHost.youtube({ type: 'pause' }); publish({ playing: false }); }
+      if (state.index + 1 < state.queue.length) loadTrack(state.index + 1, !paused);
+      else { paused = true; element?.pause(); if (activeYoutubeId) await window.audioHost.youtube({ type: 'pause' }); publish({ playing: false }); }
       break;
-    case 'select': loadTrack(value.index, state.playing); break;
+    case 'select': loadTrack(value.index, !paused); break;
     case 'seek':
       if (activeYoutubeId) { await window.audioHost.youtube({ type: 'seek', seconds: value.seconds }); publish({ position: value.seconds }); break; }
       if (!element || !Number.isFinite(element.duration)) throw new Error('Wait for the file to load before seeking.');
@@ -362,7 +418,7 @@ export async function command(value: AudioCommand) {
     case 'remove': {
       if (!state.queue[value.index]) throw new Error('This queue item no longer exists.');
       const queue = state.queue.filter((_, index) => index !== value.index);
-      const wasPlaying = state.playing;
+      const wasPlaying = !paused;
       if (value.index === state.index) {
         disposeMusic(); publish({ queue, index: -1, position: 0, duration: 0, playing: false, buffering: false });
         if (queue.length) loadTrack(Math.min(value.index, queue.length - 1), wasPlaying);
