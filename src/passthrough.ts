@@ -312,9 +312,19 @@ export function youtubeUpdate(update: YouTubeUpdate) {
   if (update.error) { patch.error = update.error; patch.playing = false; }
   if (update.playerState === 1) {
     if (state.status !== 'live' || !youtubeStream) { void window.audioHost.youtube({ type: 'pause' }).catch(() => {}); }
-    else { patch.playing = true; patch.buffering = false; patch.error = null; }
+    else {
+      patch.playing = true; patch.buffering = false; patch.error = null;
+      // Playing from the embed's own controls (including its replay button) is a play intent too.
+      paused = false; endedVersion = -1;
+    }
   } else if (update.playerState === 3) patch.buffering = true;
-  else if (update.playerState === 2 || update.playerState === 5) { patch.playing = false; patch.buffering = false; }
+  else if (update.playerState === 2 || update.playerState === 5) {
+    patch.playing = false; patch.buffering = false;
+    // A pause from the embed's own controls is a pause intent. YouTube also reports PAUSED right as a
+    // track finishes, so a pause within the last second is treated as the end, not as the operator.
+    const position = patch.position ?? state.position, duration = patch.duration ?? state.duration;
+    if (update.playerState === 2 && duration > 0 && position < duration - 1) paused = true;
+  }
   if (update.playerState === 0) {
     // YouTube can deliver ENDED more than once for the same video (onStateChange plus infoDelivery),
     // so the end of a track is handled once per mediaVersion.

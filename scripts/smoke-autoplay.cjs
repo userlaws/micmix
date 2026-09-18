@@ -91,8 +91,24 @@ module.exports = async function smoke(ui, worker, root, _registerFiles, youtube)
       transitions.push({ from: index, gapMs: advance.gapMs, view: viewState(), error: advance.error || playing.error || null });
       if (index === 2) { ui.show(); await sleep(400); }
     }
+    // Part 3: pausing from the embed's OWN controls is a real pause, so Next must not start the next
+    // song; playing from the embed again is a real play. Driven through the view, not MicMix's buttons.
+    await youtube.command({ type: 'pause' });
+    await waitFor(s => !s.playing, 'embed pause reported');
+    await command({ type: 'select', index: 2 });
+    await sleep(3000);
+    const afterEmbedPause = await state();
+    console.log('  embed pause then select: index ' + afterEmbedPause.index + ', playing=' + afterEmbedPause.playing);
+    if (afterEmbedPause.playing) throw new Error('Paused from the embed controls, but selecting another track started playback');
+    await waitFor(s => s.index === 2 && s.duration > 0, 'track 2 cued');
+    await youtube.command({ type: 'play' });
+    await waitFor(s => s.playing && s.index === 2, 'embed play reported');
+    const embedAdvance = await runToEnd(2);
+    if (!embedAdvance.advanced) throw new Error('Played from the embed controls, but the queue did not advance at the end');
+    await waitFor(s => s.playing && s.index === 3, 'track 3 playing after embed play');
+    console.log('  embed play: advanced 2 -> 3 in ' + embedAdvance.gapMs + 'ms');
     const end = await state();
-    const report = { heldStill, transitions, end: { index: end.index, playing: end.playing, error: end.error } };
+    const report = { heldStill, transitions, embedAdvance, end: { index: end.index, playing: end.playing, error: end.error } };
     await mkdir(path.join(root, 'artifacts'), { recursive: true });
     await writeFile(path.join(root, 'artifacts', 'autoplay.json'), JSON.stringify(report, null, 2));
     for (const t of transitions) {
@@ -103,7 +119,7 @@ module.exports = async function smoke(ui, worker, root, _registerFiles, youtube)
     if (failed) throw new Error('Auto-advance past track ' + failed.from + ' reported: ' + failed.error);
     if (!transitions.every(t => t.view.attached)) throw new Error('The YouTube view was detached during a transition');
     if (report.end.index !== 3 || !report.end.playing) throw new Error('Queue did not finish on track 3 playing: ' + JSON.stringify(report.end));
-    console.log('autoplay OK: off holds the track, on advances in all three UI states');
+    console.log('autoplay OK: off holds the track, on advances in all three UI states, embed controls count as intent');
   } finally {
     ui.show();
     await command({ type: 'stop' }).catch(() => {});
